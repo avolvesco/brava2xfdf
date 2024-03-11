@@ -1,0 +1,195 @@
+import React, { Component } from 'react';
+import styled from 'styled-components';
+import queryString from 'query-string';
+
+import WebViewer from './components/WebViewer';
+
+interface MyProps {
+  isDisabled: boolean;
+  // etc...
+}
+
+const Container = styled.div`
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  justify-content: center;
+  align-items: center;
+`;
+
+const ErrorContainer = styled.div`
+  padding: 20px;
+`;
+
+const LoadButton = styled.div`
+  color: #fff;
+  background-color: #39A04c;
+  max-width: 80%;
+  font-size: 1.25rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  display: inline-block;
+  overflow: hidden;
+  padding: 0.625rem 1.25rem;
+  box-shadow: 0 2px 5px 0 rgba(0,0,0,.16), 0 2px 10px 0 rgba(0,0,0,.12);
+  ${({ isDisabled }: any) => isDisabled && `background-color: grey; cursor: not-allowed;`}
+`;
+
+const SelectFileLabel = styled.label`
+  color: #fff;
+  background-color: #4285f4;
+  max-width: 80%;
+  font-size: 1.25rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  display: inline-block;
+  overflow: hidden;
+  padding: 0.625rem 1.25rem;
+  box-shadow: 0 2px 5px 0 rgba(0,0,0,.16), 0 2px 10px 0 rgba(0,0,0,.12);
+`;
+
+const StyledInput = styled.input`
+  ${({ isFileChosen }: any) => !isFileChosen && `display: none`}
+`;
+
+interface IProps { location: any; }
+interface IState {
+  showDemo: boolean;
+  showViewer: boolean;
+  pdfFromPicker: any;
+  xrlFromPicker: any;
+  error: Error | null;
+  errorMessage: String;
+}
+
+const getInitialShowDemo = (props: IProps) => !!queryString.parse(props.location.pathname).demo;
+
+class App extends React.Component<IProps, IState> {
+  readonly state: IState = {
+    showDemo: getInitialShowDemo(this.props),
+    showViewer: false,
+    pdfFromPicker: null,
+    xrlFromPicker: null,
+    error: null,
+    errorMessage: '',
+  };
+
+  handleFilePick = (e) => {
+    this.setState({
+      pdfFromPicker: e.target.files[0],
+    });
+  }
+
+  handleMarkupPick = (e) => {
+    this.setState({
+      xrlFromPicker: e.target.files[0],
+    });
+  }
+
+  render() {
+    const {
+      showDemo,
+      showViewer,
+      pdfFromPicker,
+      xrlFromPicker,
+    } = this.state;
+
+    if (this.state.error) {
+      return (
+        <Container>
+          <ErrorContainer>
+            <h2>{this.state.errorMessage}</h2>
+            <details style={{ whiteSpace: 'pre-wrap' }}>
+              {this.state.error && this.state.error.toString()}
+              <br />
+              {this.state.error.stack}
+            </details>
+          </ErrorContainer>
+        </Container>
+      );
+    }
+
+    if (showDemo) {
+      return (
+        <WebViewer
+          onError={(error: Error, errorMessage: String) => this.setState({ error, errorMessage })}
+        />
+      );
+    }
+
+    if (showViewer) {
+      return (
+        <WebViewer
+          docFile={pdfFromPicker}
+          markupFile={xrlFromPicker}
+          onError={(error: Error, errorMessage: String) => this.setState({ error, errorMessage })}
+        />
+      );
+    }
+
+    const loadDisabled = !pdfFromPicker || !xrlFromPicker;
+
+    return (
+      <Container>
+        <div>
+          <div>
+            <LoadButton
+              type="button"
+              onClick={() => {
+                this.setState({ showDemo: true });
+              }}
+            >
+              Load demo files
+            </LoadButton>
+          </div>
+          <div>
+            <SelectFileLabel
+              htmlFor="fileElem"
+            >
+              {!pdfFromPicker && `Choose a pdf...`}
+              <StyledInput
+                type="file"
+                id="fileElem"
+                isFileChosen={!!pdfFromPicker}
+                onChange={this.handleFilePick}
+                accept=".pdf,.docx"
+              />
+            </SelectFileLabel>
+            <SelectFileLabel
+              htmlFor="markupElem"
+            >
+              {!xrlFromPicker && `Choose a .xrl file...`}
+              <StyledInput
+                type="file"
+                id="markupElem"
+                isFileChosen={!!xrlFromPicker}
+                onChange={this.handleMarkupPick}
+                accept=".xrl"
+              />
+            </SelectFileLabel>
+            <LoadButton
+              type="button"
+              isDisabled={loadDisabled}
+              onClick={(e) => {
+                if (loadDisabled) {
+                  e.preventDefault();
+                } else {
+                  this.setState({ showViewer: true });
+                }
+              }}
+            >
+              Load my files
+            </LoadButton>
+          </div>
+        </div>
+      </Container>
+    );
+  }
+}
+
+export default App;
