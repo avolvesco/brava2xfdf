@@ -322,12 +322,29 @@ const createEllipse = async (context, br_ellipseNode) => {
 
   dateFormated = "D:" + date.getFullYear() + month + date.getDay() + date.getHours() + date.getMinutes() + date.getSeconds() + "-08'00'";
 
+  //Calculate the correct rect for the circle based on the page rotation
+  var size = { minX: minX, minY: minY, maxX: maxX, maxY: maxY };
+  switch (context.pageRotationDegree) {
+	case 90:
+	  size.maxX = size.maxX + diffX;
+	  break;
+	case 270:
+	  size.minX = size.minX - diffX;
+	  break;
+	case 180:
+	  size.maxY = size.maxY + diffY;
+	  break;
+	default:
+	  size.minY = size.minY - diffY;
+	  break;
+   }
+	
   const xfdf_circleNode = outXfdfDoc.createElement('circle');
   setXfdfAttributes(
     {
       page: pageIndex,
       title: authorName,
-      rect: rotationDegree === 90 || rotationDegree === 270 ? `${minX - diffX},${(minY)},${maxX},${maxY}` : `${minX},${(minY - diffY)},${maxX},${maxY}`,
+      rect: `${size.minX},${(size.minY)},${size.maxX},${size.maxY}`,
     },
     br_ellipseNode.attributes,
     xfdf_circleNode,
