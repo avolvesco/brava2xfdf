@@ -227,7 +227,7 @@ const createNodeWithVertices = async (
     br_node.setAttribute("creationtime", br_node.getAttribute("time")); // Replace with appropriate default
   }
 
-  const creationtime = br_node.attributes.creationtime
+  const creationtime = br_node.attributes.creationtime.nodeValue;
   const time = br_node.attributes.time.nodeValue;
 
   // Get the creation and modified date
