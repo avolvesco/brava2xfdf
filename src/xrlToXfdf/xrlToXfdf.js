@@ -1192,6 +1192,7 @@ const createStampNode = async (context, br_raster, isChangeView = false, ocgLaye
 
 		return convertImageToPNG(URL.createObjectURL(new Blob([rawSvgString], { type: 'image/svg+xml' })), pageRotation);
 	}      
+	
 	xfdf_imageDataNode.innerHTML = await getChangeviewImage(0, xfdf_stampNode.getAttribute("color"));
 	//END Added to generate the image of the markup
 		
@@ -1236,7 +1237,10 @@ const createStampNode = async (context, br_raster, isChangeView = false, ocgLaye
     // Declare createOcgLayersObjectArray, taking three parameters: ocgLayers (expected to be an array), and two indices i and j
     function createOcgLayersObjectArray(ocgLayers, i, j) {
 
-
+	  // Check if ocgLayers exists
+      if (!ocgLayers)
+        return;
+	
       // Check if ocgLayers has length
       if (ocgLayers.length) {
         // If ocgLayers has no length, return immediately
@@ -1254,10 +1258,6 @@ const createStampNode = async (context, br_raster, isChangeView = false, ocgLaye
         console.log("no name");
         return;
       }*/
-
-      // Check if ocgLayers exists
-      if (!ocgLayers)
-        return;
 
       // Check if the element at index i of ocgLayers exists
       if (!ocgLayers[i])
