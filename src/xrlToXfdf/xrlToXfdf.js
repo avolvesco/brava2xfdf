@@ -542,6 +542,11 @@ const createFreeTextNode = async (context, br_text) => {
   }
   let fontVal = fontsizeAttr.value;
 
+//START Changed logic for calculating the FreeText font size by using the Canvas measureText method so it can handle any font size from Brava text annotations.
+
+//Returns the adjusted fontsize, width, height of the text given the Brava font face and font size that will fit 
+//the specified width and height
+ /*
   const thresholds = [
     { limit: 0.005, multiplier: 0.5 },
     { limit: 0.01, multiplier: 0.575 },
@@ -584,16 +589,145 @@ const createFreeTextNode = async (context, br_text) => {
   if (isCADFile) {
     FontSize *= 150;
   }
+*/
+
+	let size = {minX: minX, minY: minY, maxX: maxX, maxY: maxY};
+	const convertBravaTextMetrics = function (text, fontFace, fontSize, width, height) {
+		let canvas = document.createElement('canvas');
+		let ctx = canvas.getContext('2d');
+		ctx.font = `${fontSize}pt ${fontFace}`;
+
+		ctx.textBaseline = 'middle';
+		ctx.textAlign = "left";
+		const lines = text.split(/\r\n/);
+		var newLines = []; //the separation of the text into lines that will fit the width and height
+		var totalWidth = 0, totalHeight = 0; //calculated total width and height of the text
+		var lineWidth = 0, currentLine = "";
+		for (var idx = 0, ilen = lines.length; idx < ilen; idx++) {
+			var line = lines[idx];
+			
+			//We found a spacer, just add a new line
+			if (line.trim() == "") {
+				metrics = ctx.measureText(line);
+				lineWidth = metrics.width;
+				totalHeight += metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent;
+				newLines.push(line.trim());
+				if (totalWidth < lineWidth) totalWidth = lineWidth;
+				currentLine = "";
+				lineWidth = 0;
+				continue;
+			}
+			var words = line.split(/(\s+)/);
+			for (var jdx = 0, jlen = words.length; jdx < jlen; jdx++) {
+				var word = words[jdx];
+				
+				//Calculate the width and height of the text
+				var metrics = ctx.measureText(word);
+				var wordWidth = metrics.width, wordHeight = metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent;
+				var fitLine = width > (lineWidth + wordWidth);
+				
+				//Determine if the word fits the line, just append the word to the current line
+				if (fitLine) {
+					lineWidth += wordWidth;
+					currentLine += word;
+				} 
+				
+				//If the non-space word no longer fits the line, add it as a new line
+				else if (word.trim() !== "") {
+					//Update the totalWidth and totalHeight of text
+					totalHeight += wordHeight;
+					if (totalWidth < lineWidth) totalWidth = lineWidth;
+					if ( idx === 0 && currentLine.trim() != "")
+						newLines.push(currentLine.trim())
+					
+					currentLine = word;
+					lineWidth = wordWidth;
+				}
+				
+				//If the last word of the line, push the entire line into the newLine array.
+				if (jdx === jlen - 1) {
+					metrics = ctx.measureText(currentLine.trim());
+					lineWidth = metrics.width;
+					totalHeight += metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent;
+					newLines.push(currentLine.trim());
+					if (totalWidth < lineWidth) totalWidth = lineWidth;
+					currentLine = "";
+					lineWidth = 0;
+				}
+			}
+		}
+		
+		//The min and max ratio to fill the height of the box
+		var maxRatioThreshold = 0.99, minRatioThreshold = 0.75;
+		
+		//If text did not fit the height, reduce the font size and try again
+		if (totalHeight > height) {
+		   var scaleFactor = maxRatioThreshold - (totalHeight/height);
+		   var newFontSize = Math.abs(Math.ceil(fontSize - fontSize * scaleFactor));
+		   if (newFontSize>=fontSize) newFontSize = fontSize - 1;
+		   return convertBravaTextMetrics(text, fontFace, newFontSize, width, height)
+		}
+		//If the totalHeight is below minRatioThreshold, we need to increase the font size to fill the spaces
+		else if (totalHeight/height < minRatioThreshold) {
+		   var scaleFactor = minRatioThreshold - (totalHeight/height);
+		   var newFontSize = Math.abs(Math.ceil(fontSize + fontSize * scaleFactor));
+		   if (newFontSize<=fontSize) newFontSize = fontSize + 1;
+		   fontSize = newFontSize;
+		}
+		//If height is just right but exceeds width, extend the width of the freetext to fit
+		//This is the behavior in the Brava HTML viewer
+		else if (totalWidth > width) width = totalWidth;
+		
+		return {width: width, height: height, fontSize: fontSize+"pt"};
+		
+	};
+
+	//Get all the lines in the text annotation
+	var text = "";
+	var elLines = br_text.querySelectorAll("TextLine");
+	for (var idx = 0, len = elLines.length; idx < len; idx++)
+		text += (text === "" ? "" : '\r\n') + elLines[idx].innerHTML;
+
+	//Get the font size adjusted to a scale factor
+	var bravaFontSize = Math.floor(parseFloat(fontVal) / 0.0352778 * 8);
+	var txtWidth = size.maxX - size.minX , txtHeight = size.maxY - size.minY;
+	if (context.pageRotationDegree == 90 || context.pageRotationDegree == 270) {
+		txtHeight = size.maxX - size.minX;
+		txtWidth = size.maxY - size.minY;
+	}
+	let txtMetrics = convertBravaTextMetrics(text, fontAttr.value, bravaFontSize, txtWidth, txtHeight);
+	let fontFace = fontAttr.value.replace(/\s+/g, ""), fontSize = txtMetrics.fontSize.replace("pt", "");
+	//Adjust the size according to the pageRotation
+	switch (context.pageRotationDegree) {
+		case 90:
+			size.maxX = size.minX + txtMetrics.height;
+			size.maxY = size.minY + txtMetrics.width;
+			break;
+		case 180:
+			size.maxX = size.minY + txtMetrics.width;
+			size.maxY = size.minX + txtMetrics.height;
+			break;
+		case 270:
+			size.minX = size.maxX - txtMetrics.height
+			size.minY = size.maxY - txtMetrics.width;
+			break;
+		case 0:
+			size.maxX = size.minX + txtMetrics.width;
+			size.maxY = size.minY + txtMetrics.height;
+			break;
+	}
+
+	//END Changed logic for calculating the FreeText font size by using the Canvas measureText method so it can handle any font size from Brava text annotations. 
 
   let copyAttributes = {
     page: pageIndex,
-    title: authorName,
-    rect: `${minX},${minY},${maxX},${maxY}`,
+    title: authorName,	
+	rect: `${size.minX},${size.minY},${size.maxX},${size.maxY}`, //Use the rect we got from the calculation	
     subject: 'FreeText',
     TextColor: `#${rgbToHex(...colorAttr.value.split('|'))}`,
-    FontSize,
+    FontSize: txtMetrics.fontSize.replace("pt", ""), //Use the font size we got from the calculation	 
     width: "0", // border always applied. So, set it to zero by default.
-    rotation: rotationDegree,
+    rotation: context.pageRotationDegree //Set appropriate rotation in the Freetext element
   };
 
   if (opaqueAttr.value === 'secondarycolor') {
@@ -635,19 +769,19 @@ const createFreeTextNode = async (context, br_text) => {
   colorAttr.value.split('|').forEach((v) => {
     defaultAppearanceText = `${defaultAppearanceText}${(parseInt(v, 10) / 255)} `;
   });
-  defaultAppearanceText += 'rg';
+  defaultAppearanceText += 'rg /${fontFace} ${fontSize} Tf';  //Include the font face and size to the default appearance  
   xfdf_defaultappearanceNode.textContent = defaultAppearanceText;
   const xfdf_defaultstyleNode = outXfdfDoc.createElement('defaultstyle');
 
   switch (textAlignment) {
     case 'L':
-      xfdf_defaultstyleNode.textContent = `font: '${fontAttr.value}'; text-align: left;`;
+      xfdf_defaultstyleNode.textContent = `font: '${fontAttr.value}' ${txtMetrics.fontSize}; text-align: left;`; //Include the font face and size to the default style
       break;
     case 'R':
-      xfdf_defaultstyleNode.textContent = `font: '${fontAttr.value}'; text-align: right;`;
+      xfdf_defaultstyleNode.textContent = `font: '${fontAttr.value}' ${txtMetrics.fontSize}; text-align: right;`; //Include the font face and size to the default style
       break;
     default:
-      xfdf_defaultstyleNode.textContent = `font: '${fontAttr.value}'; text-align: center;`;
+      xfdf_defaultstyleNode.textContent = `font: '${fontAttr.value}' ${txtMetrics.fontSize}; text-align: center;`; //Include the font face and size to the default style
       break;
   }
   
