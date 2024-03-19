@@ -1105,13 +1105,13 @@ const createStampNode = async (context, br_raster, isChangeView = false, ocgLaye
     // annotation (customData field) even though it won't be displayed
     // in the WebViewer.
     const br_state = find(br_raster.childNodes, { nodeName: 'State' });
-    const state = br_state.textContent;
+    //const state = br_state.textContent; //This code causes issues when State element doesn't exist
 
     const br_state_color = find(br_raster.childNodes, { nodeName: 'StateColor' });
-    const stateColor = br_state_color.textContent;
+    //const stateColor = br_state_color.textContent; //This code causes issues when StateColor element doesn't exist
 
     const br_category = find(br_raster.childNodes, { nodeName: 'Category' });
-    const category = br_category.textContent;
+    //const category = br_category.textContent;  //This code causes issues when Category element doesn't exist
 
 
     const id = br_raster.attributes.id.nodeValue;
