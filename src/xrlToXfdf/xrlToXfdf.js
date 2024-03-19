@@ -833,7 +833,8 @@ const createStampNode = async (context, br_raster, isChangeView = false, ocgLaye
         rect: `${minX},${minY},${maxX},${maxY}`,
         title: authorName,
         subject: 'Stamp',
-        rotation: rotationDegree,
+        rotation: context.pageRotationDegree, //Set rotation to the page rotation in the Stamp element since the image will be at 0 degrees
+		//rotation: rotationDegree,
         creationDate: creationdateFormated,
         date: dateFormated,
       },
@@ -877,7 +878,7 @@ const createStampNode = async (context, br_raster, isChangeView = false, ocgLaye
     // converted to binary and a bitmask applied
     // to find out which OCG layer is turned on or off
     const layerBlock = find(layerTable.childNodes, { nodeName: 'LayerBlock' });
-    let ocgValue = parseInt(layerBlock.innerHTML);
+    let ocgValue = parseInt(layerBlock === undefined? "0": layerBlock.innerHTML); //Suppport scenario where LayerTable/LayerBlock does not exist in the XRL.
     let ocgBit = (ocgValue >>> 0).toString(2);
 
     let ocgLayerArray = [];
@@ -935,7 +936,8 @@ const createStampNode = async (context, br_raster, isChangeView = false, ocgLaye
         title: authorName,
         subject: 'Stamp',
         //isChangeView: ocgLayerArray,
-        //rotation: rotationDegree,
+         rotation: context.pageRotationDegree, //Set rotation to the page rotation in the Stamp element since the image will be at 0 degrees		
+		//rotation: rotationDegree,
         //pagePosition: `${minX},${minY},${maxX},${maxY}`,
         ocgLayers: ocgLayerArray,
         creationdate: creationdateFormated,
@@ -947,6 +949,60 @@ const createStampNode = async (context, br_raster, isChangeView = false, ocgLaye
     );
 
     const xfdf_imageDataNode = outXfdfDoc.createElement('imagedata');
+	
+	//START Added to generate the image of the markup
+	const convertImageToPNG = async function (imgDataUrl, pageRotation) {
+		return new Promise((resolve, reject) => {
+			const img = new Image();
+			let canvas = document.createElement('canvas');
+			let ctx = canvas.getContext('2d');
+
+			img.addEventListener('load', () => {
+				var width = img.width * 2, height = img.height * 2;
+				canvas.setAttribute('width', width);
+				canvas.setAttribute('height', height);
+
+				if (pageRotation !== undefined && pageRotation !== null) {
+					var factorX = 1, factorY = 1;
+					if (pageRotation == 0 || pageRotation == 270) factorX = -1;
+					if (pageRotation == 0 || pageRotation == 90) factorY = -1;
+
+					//Determine the center point
+					let centerX = canvas.width - img.width + factorX * 0.5 * (canvas.width - img.width);
+					let centerY = canvas.width - img.height + factorY * 0.5 * (canvas.height - img.height);
+
+					// move to the center of the canvas
+					ctx.translate(centerX, centerY);
+
+					// rotate the canvas to the specified degrees
+					ctx.rotate(pageRotation * Math.PI / 180);
+
+					// draw the image
+					// since the context is rotated, the image will be rotated also
+					ctx.drawImage(img, -img.width / 2, -img.height / 2);
+				} else {
+					ctx.drawImage(img, 0, 0);
+				}
+
+				const dataUrl = canvas.toDataURL('image/png');
+				resolve(dataUrl);
+			});
+
+			img.src = imgDataUrl;
+		});
+	};
+		
+		
+	const getChangeviewImage = async function (pageRotation, color) {
+		let fillColor = "rgb(0, 0, 0)";
+		if (color !== null && color !== undefined && color !== "") fillColor = color;
+		let rawSvgString = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" style="fill:' + fillColor + ';transform: ;msFilter:;"><path d="M5,2C3.897,2,3,2.897,3,4v12c0,1.103,0.897,2,2,2h3.586L12,21.414L15.414,18H19c1.103,0,2-0.897,2-2V4c0-1.103-0.897-2-2-2 H5z M19,16h-4.414L12,18.586L9.414,16H5V4h14V16z"></path><path d="M11 6H13V12H11zM11 13H13V15H11z"></path></svg>';
+
+		return convertImageToPNG(URL.createObjectURL(new Blob([rawSvgString], { type: 'image/svg+xml' })), pageRotation);
+	}      
+	xfdf_imageDataNode.innerHTML = await getChangeviewImage(0, xfdf_stampNode.getAttribute("color"));
+	//END Added to generate the image of the markup
+		
     // TODO: Get encoding?
     //xfdf_imageDataNode.textContent = imageData;
     // xfdf_imageDataNode.textContent = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iMjAiIGZpbGw9InJnYigwLCAwLCAwKSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4gPGc+IDxwYXRoIGlkPSJzdmdfMSIgZD0ibTEzLjM5MTYxLDAuNDYxNTRjLTEuMTAzLDAgLTIsMC44OTcgLTIsMmwwLDEyYzAsMS4xMDMgMC44OTcsMiAyLDJsMy41ODYsMGwzLjQxNCwzLjQxNGwzLjQxNCwtMy40MTRsMy41ODYsMGMxLjEwMywwIDIsLTAuODk3IDIsLTJsMCwtMTJjMCwtMS4xMDMgLTAuODk3LC0yIC0yLC0ybC0xNCwwem0xNCwxNGwtNC40MTQsMGwtMi41ODYsMi41ODZsLTIuNTg2LC0yLjU4NmwtNC40MTQsMGwwLC0xMmwxNCwwbDAsMTJ6Ii8+IDxwYXRoIGlkPSJzdmdfMiIgZD0ibTE5LjM5MTYxLDQuNDYxNTRsMiwwbDAsNmwtMiwwbDAsLTZ6bTAsN2wyLDBsMCwybC0yLDBsMCwtMnoiLz4gPC9nPjwvc3ZnPg==';
@@ -1064,9 +1120,41 @@ const createStampNode = async (context, br_raster, isChangeView = false, ocgLaye
     const hyperlink = br_raster.attributes.hyperlink.nodeValue;
     const comment = br_raster.attributes.comment.nodeValue;
 
+	//START handle scenarios where LayerTable/LayerBlock, State, StateColor, Category elements don't exist in the XRL.
+    var bytesData = {
+		 //ImageData should be placed within the imagedata element rather than in here                    
+		 //"ImageData": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iMjAiIGZpbGw9InJnYigwLCAwLCAwKSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4gPGc+IDxwYXRoIGlkPSJzdmdfMSIgZD0ibTEzLjM5MTYxLDAuNDYxNTRjLTEuMTAzLDAgLTIsMC44OTcgLTIsMmwwLDEyYzAsMS4xMDMgMC44OTcsMiAyLDJsMy41ODYsMGwzLjQxNCwzLjQxNGwzLjQxNCwtMy40MTRsMy41ODYsMGMxLjEwMywwIDIsLTAuODk3IDIsLTJsMCwtMTJjMCwtMS4xMDMgLTAuODk3LC0yIC0yLC0ybC0xNCwwem0xNCwxNGwtNC40MTQsMGwtMi41ODYsMi41ODZsLTIuNTg2LC0yLjU4NmwtNC40MTQsMGwwLC0xMmwxNCwwbDAsMTJ6Ii8+IDxwYXRoIGlkPSJzdmdfMiIgZD0ibTE5LjM5MTYxLDQuNDYxNTRsMiwwbDAsNmwtMiwwbDAsLTZ6bTAsN2wyLDBsMCwybC0yLDBsMCwtMnoiLz4gPC9nPjwvc3ZnPg==",
+		 //"pagePosition":"[0,0,910,781]", //Why is this hard coded?
+		 "pageZoom": pageZoom,
+		 "offset" : 0, 
+		 "PageNumber" : pageIndex,
+		 "isChangeView": "true", 
+		 "ocgLayerArray" : ocgLayers, 
+		 "trn-viewstate" : {
+			"layers" : ocgLayers, 
+			"rotation" : 0, 
+			"zoom" : pageZoom
+		  }, 
+		  "author" : authorName, 
+		  "id": id, 
+		  "creationtime": creationtime, 
+		  "time": time, 
+		  "guid": guid , 
+		  "color" : color,
+		  "hyperlink" : hyperlink, 
+		  "comment" : comment
+	};
+				
+    if (br_state !== undefined) bytesData["state"] = br_state.textContent;
+    if (br_state_color !== undefined) bytesData["stateColor"] = br_state_color.textContent;
+    if (br_category !== undefined) bytesData["category"] = br_category.textContent;
+	
     // Add everything to the custom view of the annotation.
-    trnCustomData.setAttribute('bytes', '{"ImageData": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iMjAiIGZpbGw9InJnYigwLCAwLCAwKSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4gPGc+IDxwYXRoIGlkPSJzdmdfMSIgZD0ibTEzLjM5MTYxLDAuNDYxNTRjLTEuMTAzLDAgLTIsMC44OTcgLTIsMmwwLDEyYzAsMS4xMDMgMC44OTcsMiAyLDJsMy41ODYsMGwzLjQxNCwzLjQxNGwzLjQxNCwtMy40MTRsMy41ODYsMGMxLjEwMywwIDIsLTAuODk3IDIsLTJsMCwtMTJjMCwtMS4xMDMgLTAuODk3LC0yIC0yLC0ybC0xNCwwem0xNCwxNGwtNC40MTQsMGwtMi41ODYsMi41ODZsLTIuNTg2LC0yLjU4NmwtNC40MTQsMGwwLC0xMmwxNCwwbDAsMTJ6Ii8+IDxwYXRoIGlkPSJzdmdfMiIgZD0ibTE5LjM5MTYxLDQuNDYxNTRsMiwwbDAsNmwtMiwwbDAsLTZ6bTAsN2wyLDBsMCwybC0yLDBsMCwtMnoiLz4gPC9nPjwvc3ZnPg==","pagePosition":"[0,0,910,781]", "pageZoom":"' + pageZoom + '","offset" : 0, "PageNumber":"' + pageIndex + '", "isChangeView": "true", "ocgLayerArray" : "' + ocgLayers + ', ", "trn-viewstate" : {"layers" : ' + JSON.stringify(ocgLayers) + ', "rotation" : 0, "zoom" : ' + pageZoom + '}, "state" : "' + state + '", "stateColor" : "' + stateColor + '", "category" : "' + category + '", "author" : "' + authorName + '", "id" : "' + id + '", "creationtime" : "' + creationtime + '", "time" : "' + time + '", "guid" : "' + guid + '", "color" : "' + color + '", "hyperlink" : "' + hyperlink + '", "comment" : "' + comment + '"}');
-    xfdf_stampNode.appendChild(trnCustomData);
+    //trnCustomData.setAttribute('bytes', '{"ImageData": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iMjAiIGZpbGw9InJnYigwLCAwLCAwKSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4gPGc+IDxwYXRoIGlkPSJzdmdfMSIgZD0ibTEzLjM5MTYxLDAuNDYxNTRjLTEuMTAzLDAgLTIsMC44OTcgLTIsMmwwLDEyYzAsMS4xMDMgMC44OTcsMiAyLDJsMy41ODYsMGwzLjQxNCwzLjQxNGwzLjQxNCwtMy40MTRsMy41ODYsMGMxLjEwMywwIDIsLTAuODk3IDIsLTJsMCwtMTJjMCwtMS4xMDMgLTAuODk3LC0yIC0yLC0ybC0xNCwwem0xNCwxNGwtNC40MTQsMGwtMi41ODYsMi41ODZsLTIuNTg2LC0yLjU4NmwtNC40MTQsMGwwLC0xMmwxNCwwbDAsMTJ6Ii8+IDxwYXRoIGlkPSJzdmdfMiIgZD0ibTE5LjM5MTYxLDQuNDYxNTRsMiwwbDAsNmwtMiwwbDAsLTZ6bTAsN2wyLDBsMCwybC0yLDBsMCwtMnoiLz4gPC9nPjwvc3ZnPg==","pagePosition":"[0,0,910,781]", "pageZoom":"' + pageZoom + '","offset" : 0, "PageNumber":"' + pageIndex + '", "isChangeView": "true", "ocgLayerArray" : "' + ocgLayers + ', ", "trn-viewstate" : {"layers" : ' + JSON.stringify(ocgLayers) + ', "rotation" : 0, "zoom" : ' + pageZoom + '}, "state" : "' + state + '", "stateColor" : "' + stateColor + '", "category" : "' + category + '", "author" : "' + authorName + '", "id" : "' + id + '", "creationtime" : "' + creationtime + '", "time" : "' + time + '", "guid" : "' + guid + '", "color" : "' + color + '", "hyperlink" : "' + hyperlink + '", "comment" : "' + comment + '"}');
+    trnCustomData.setAttribute("bytes", JSON.stringify(bytesData));		
+	//END handle scenarios where LayerTable/LayerBlock, State, StateColor, Category elements don't exist in the XRL.
+   
+	xfdf_stampNode.appendChild(trnCustomData);
 
     // Also add the original comment from Brava to the XFDF.
     const xfdf_contents = outXfdfDoc.createElement('contents');
