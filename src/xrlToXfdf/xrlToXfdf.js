@@ -47,24 +47,51 @@ const applyMatrixToPoints = ({
   pageConversion,
   matrix,
   isText = false,
+    
+  //START Added DriverInfo and bravaPage, bravaWidth, bravaHeight, wvWidth, wvHeight in paramaters for additional processing for CAD Files
+  DriverInfo, 
+  bravaPage, 
+  bravaWidth,
+  bravaHeight,
+  wvWidth,
+  wvHeight,
+  //END Added DriverInfo and bravaPage, bravaWidth, bravaHeight, wvWidth, wvHeight in paramaters for additional processing for CAD Files
+  
+ 
   CDLInfo = {},
   oldVersionFix = true,
 }) => {
   let rotationDegree = getNearestRotationDegreeFromRad(getRotationRadFromMatrix(matrix));
   let points = [];
-  unConvertedPoints.forEach((unConvertedPoint) => {
-    const _unConvertedPoint = { ...unConvertedPoint };
+	
+	//When converting markups for CAD Files, calculate the points based on the ratio of the point from the width and height of the original CAD file 
+	//to the width and height of the CAD file converted to PDF. Since in PDFTron, we need to convert the CAD File into a PDF but the resulting PDF file
+	//does not have the same width/height as the original CAD File.	
+	var isCAD = ["dwg2dl", "dwf2dl", "dgn2dl"].indexOf(DriverInfo.toLowerCase()) > -1;
+	 if (isCAD) {
+	   for(var idx = 0, ilen = unConvertedPoints.length; idx < ilen; idx++){
+		  var pt = unConvertedPoints[idx]
+		  , ratioX = (pt.x - bravaPage.left) / bravaWidth
+		  , ratioY = (pt.y - bravaPage.bottom) / bravaHeight;
+		   points.push({
+			  x: wvWidth * ratioX,
+			  y: wvHeight * ratioY
+		   })   
+	   }
+	} else {   
+	  unConvertedPoints.forEach((unConvertedPoint) => {
+		const _unConvertedPoint = { ...unConvertedPoint };
 
-    const { x, y } = getConvertedPoint(
-      _unConvertedPoint,
-      {
-        pageConversion,
-        matrix,
-      },
-    );
-    points.push({ x, y });
-  });
-
+		const { x, y } = getConvertedPoint(
+		  _unConvertedPoint,
+		  {
+			pageConversion,
+			matrix,
+		  },
+		);
+		points.push({ x, y });
+	  });
+	}
   const xPoints = points.map((point) => point.x);
   const yPoints = points.map((point) => point.y);
   let minX = Math.min(...xPoints);
@@ -77,7 +104,7 @@ const applyMatrixToPoints = ({
   } = CDLInfo;
   const isOldVersion = v1.textContent === '5' && v2.textContent === '3' && v3.textContent === '0' && v4.textContent === '99';
 
-  if (!isText || !oldVersionFix || !isOldVersion) {
+  if (!isText || !oldVersionFix || !isOldVersion || isCAD) {
     return {
       points,
       rectPoints: {
@@ -143,6 +170,16 @@ const getConvertedPoints = (unConvertedPoints, {
   pageRotationMatrix,
   matrix,
   isText = false,
+   
+  //START Added DriverInfo and bravaPage, bravaWidth, bravaHeight, wvWidth, wvHeight in paramaters for additional processing for CAD Files
+  DriverInfo, 
+  bravaPage, 
+  bravaWidth,
+  bravaHeight,
+  wvWidth,
+  wvHeight,
+  //END Added DriverInfo and bravaPage, bravaWidth, bravaHeight, wvWidth, wvHeight in paramaters for additional processing for CAD Files
+
   CDLInfo = {},
 }) => {
   const { points, rotationDegree } = applyMatrixToPoints({
@@ -153,6 +190,16 @@ const getConvertedPoints = (unConvertedPoints, {
     pageConversion: { ...pageConversion, x: 1, y: 1 },
     matrix,
     isText,
+		
+	//START Added DriverInfo and bravaPage, bravaWidth, bravaHeight, wvWidth, wvHeight in paramaters for additional processing for CAD Files
+	DriverInfo: "", //Specify empty string for DriverInfo in paramaters so we don't convert the points yet
+	bravaPage, 
+	bravaWidth,
+	bravaHeight,
+	wvWidth,
+	wvHeight,
+	//END Added DriverInfo and bravaPage, bravaWidth, bravaHeight, wvWidth, wvHeight in paramaters for additional processing for CAD Files
+	
     CDLInfo,
   });
 
@@ -161,6 +208,16 @@ const getConvertedPoints = (unConvertedPoints, {
     pageConversion,
     matrix: pageRotationMatrix,
     isText,
+	
+	//START Added DriverInfo and bravaPage, bravaWidth, bravaHeight, wvWidth, wvHeight in paramaters for additional processing for CAD Files
+	DriverInfo,
+	bravaPage, 
+	bravaWidth,
+	bravaHeight,
+	wvWidth,
+	wvHeight,
+	//END Added DriverInfo and bravaPage, bravaWidth, bravaHeight, wvWidth, wvHeight in paramaters for additional processing for CAD Files
+	
     CDLInfo,
     oldVersionFix: false,
   });
@@ -175,15 +232,16 @@ const getConvertedPointsFromNode = (br_node, context) => {
   const { bravaPage, DriverInfo } = context;
   const { left, bottom } = bravaPage;
 
-  const isCADFile = DriverInfo.toLowerCase() === 'dwg2dl' || DriverInfo.toLowerCase() === 'dgn2dl';
+  //No need to handle the CAD files in this method. It is done after calculating the points with the matrix
+  //const isCADFile = DriverInfo.toLowerCase() === 'dwg2dl' || DriverInfo.toLowerCase() === 'dgn2dl';
 
   const unConvertedPoints = [];
   forEach(br_points, (br_point) => {
     const [br_xNode] = br_point.getElementsByTagName('x');
     const [br_yNode] = br_point.getElementsByTagName('y');
 
-    const x = parseFloat(br_xNode.textContent, 10) - (isCADFile ? left : 0);
-    const y = parseFloat(br_yNode.textContent, 10) - (isCADFile ? bottom : 0);
+    const x = parseFloat(br_xNode.textContent, 10); // - (isCADFile ? left : 0);
+    const y = parseFloat(br_yNode.textContent, 10); // - (isCADFile ? bottom : 0);
 
     unConvertedPoints.push({
       x,
