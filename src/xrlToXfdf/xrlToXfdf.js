@@ -592,7 +592,21 @@ const createFreeTextNode = async (context, br_text) => {
       xfdf_defaultstyleNode.textContent = `font: '${fontAttr.value}'; text-align: center;`;
       break;
   }
-
+  
+  //Support bold, italics, underline settings from the Brava markup
+  var isBold = br_text.getAttribute("bold") === "true", isItalic = br_text.getAttribute("italic") === "true", isUnderline = br_text.getAttribute("underline") === "true";
+  if (isBold || isItalic || isUnderline) {
+	  var contentEl = xfdf_freetext.querySelector("contents-richtext");
+	  if (contentEl === null || contentEl === undefined) {
+		contentEl = outXfdfDoc.createElement("contents-richtext");
+		xfdf_freetext.appendChild(contentEl);
+	  }
+	  contentEl.innerHTML = "<body><p><span style='" +
+			(isBold ? "font-weight:bold;" : "") + (isItalic ? "font-style:italic;" : "") +
+			(isUnderline ? "text-decoration:underline;" : "") +
+			"'>" + xfdf_contentsNode.innerHTML + "</span></p></body>";
+  }
+  
   xfdf_freetext.appendChild(xfdf_contentsNode);
   xfdf_freetext.appendChild(xfdf_defaultappearanceNode);
   xfdf_freetext.appendChild(xfdf_defaultstyleNode);
