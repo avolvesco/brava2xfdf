@@ -279,47 +279,13 @@ const createNodeWithVertices = async (
     maxY,
   } = rectPoints;
 
-  const timeAttr = br_node.getAttribute("time")
-  const creationTimeAttr = br_node.getAttribute("creationtime");
-  if (!creationTimeAttr && timeAttr) {
-    br_node.setAttribute("creationtime", br_node.getAttribute("time")); // Replace with appropriate default
-  }
-
-  const creationtime = br_node.attributes.creationtime.nodeValue;
-  const time = br_node.attributes.time.nodeValue;
-
-  // Get the creation and modified date
-  let creationdateFormated = "";
-  let dateFormated = "";
-
-  // creationtime is a Unix timestamp
-  let dateC = new Date(creationtime * 1000);
-
-  let monthC = dateC.getMonth();
-  if (monthC.toString().length === 1)
-    monthC = "0" + monthC;
-
-  creationdateFormated = "D:" + dateC.getFullYear() + monthC + dateC.getDay() + dateC.getHours() + dateC.getMinutes() + dateC.getSeconds() + "-08'00'";
-
-  // time is a Unix timestamp
-  let date = new Date(time * 1000);
-
-  let month = date.getMonth();
-  if (month.toString().length === 1)
-    month = "0" + month;
-
-  dateFormated = "D:" + date.getFullYear() + month + date.getDay() + date.getHours() + date.getMinutes() + date.getSeconds() + "-08'00'";
-
-
   const xfdf_node = outXfdfDoc.createElement(outType);
   setXfdfAttributes(
     {
       page: pageIndex,
       title: authorName,
       rect: `${minX},${minY},${maxX},${maxY}`,
-      ...style,
-      creationdate: creationdateFormated,
-      date: dateFormated
+      ...style
     },
     br_node.attributes,
     xfdf_node,
@@ -354,31 +320,6 @@ const createEllipse = async (context, br_ellipseNode) => {
 
   const diffY = maxY - minY;
   const diffX = maxX - minX;
-
-  const creationtime = br_ellipseNode.attributes.creationtime.nodeValue;
-  const time = br_ellipseNode.attributes.time.nodeValue;
-
-  // Get the creation and modified date
-  let creationdateFormated = "";
-  let dateFormated = "";
-
-  // creationtime is a Unix timestamp
-  let dateC = new Date(creationtime * 1000);
-
-  let monthC = dateC.getMonth();
-  if (monthC.toString().length === 1)
-    monthC = "0" + monthC;
-
-  creationdateFormated = "D:" + dateC.getFullYear() + monthC + dateC.getDay() + dateC.getHours() + dateC.getMinutes() + dateC.getSeconds() + "-08'00'";
-
-  // time is a Unix timestamp
-  let date = new Date(time * 1000);
-
-  let month = date.getMonth();
-  if (month.toString().length === 1)
-    month = "0" + month;
-
-  dateFormated = "D:" + date.getFullYear() + month + date.getDay() + date.getHours() + date.getMinutes() + date.getSeconds() + "-08'00'";
 
   //Calculate the correct rect for the circle based on the page rotation
   var size = { minX: minX, minY: minY, maxX: maxX, maxY: maxY };
@@ -423,12 +364,6 @@ const createLine = async (context, br_line, headType = '') => {
     maxY,
   } = rectPoints;
   const [p1, p2] = points;
-
-  const timeAttr = br_line.getAttribute("time")
-  const creationTimeAttr = br_line.getAttribute("creationtime");
-  if (!creationTimeAttr && timeAttr) {
-    br_line.setAttribute("creationtime", br_line.getAttribute("time")); // Replace with appropriate default
-  }
 
   const xfdf_line = outXfdfDoc.createElement('line');
   setXfdfAttributes(
@@ -534,12 +469,6 @@ const createFreeTextNode = async (context, br_text) => {
   } = br_text.attributes;
   const xfdf_freetext = outXfdfDoc.createElement('freetext');
 
-  //adding creationtime logic
-  const timeAttr = br_text.getAttribute("time")
-  const creationTimeAttr = br_text.getAttribute("creationtime");
-  if (!creationTimeAttr && timeAttr) {
-    br_text.setAttribute("creationtime", br_text.getAttribute("time")); // Replace with appropriate default
-  }
   let fontVal = fontsizeAttr.value;
 
 //START Changed logic for calculating the FreeText font size by using the Canvas measureText method so it can handle any font size from Brava text annotations.
@@ -769,7 +698,7 @@ const createFreeTextNode = async (context, br_text) => {
   colorAttr.value.split('|').forEach((v) => {
     defaultAppearanceText = `${defaultAppearanceText}${(parseInt(v, 10) / 255)} `;
   });
-  defaultAppearanceText += 'rg /${fontFace} ${fontSize} Tf';  //Include the font face and size to the default appearance  
+  defaultAppearanceText += `rg /${fontFace} ${fontSize} Tf`;  //Include the font face and size to the default appearance  
   xfdf_defaultappearanceNode.textContent = defaultAppearanceText;
   const xfdf_defaultstyleNode = outXfdfDoc.createElement('defaultstyle');
 
@@ -812,35 +741,10 @@ const createChangemarkReply = async (context, br_raster) => {
   //read in XRL attributes
   const { pageIndex, outXfdfDoc } = context;
 
-  const creationtime = br_raster.attributes.creationtime.nodeValue;
-  const time = br_raster.attributes.time.nodeValue;
-
   const br_reply = find(br_raster.childNodes, { nodeName: 'Reply' });
   const br_replyAuthor = find(br_raster.childNodes, { nodeName: 'ReplyAuthor' });
   const br_stateOverride = find(br_raster.childNodes, { nodeName: 'StateOverride' });
   const br_categoryOverride = find(br_raster.childNodes, { nodeName: 'CategoryOverride' });
-
-  // Get the creation and modified date
-  let creationdateFormated = "";
-  let dateFormated = "";
-
-  // creationtime is a Unix timestamp
-  let dateC = new Date(creationtime * 1000);
-
-  let monthC = dateC.getMonth();
-  if (monthC.toString().length === 1)
-    monthC = "0" + monthC;
-
-  creationdateFormated = "D:" + dateC.getFullYear() + monthC + dateC.getDay() + dateC.getHours() + dateC.getMinutes() + dateC.getSeconds() + "-08'00'";
-
-  // time is a Unix timestamp
-  let date = new Date(time * 1000);
-
-  let month = date.getMonth();
-  if (month.toString().length === 1)
-    month = "0" + month;
-
-  dateFormated = "D:" + date.getFullYear() + month + date.getDay() + date.getHours() + date.getMinutes() + date.getSeconds() + "-08'00'";
 
   const xfdf_text = outXfdfDoc.createElement('text');
 
@@ -853,8 +757,6 @@ const createChangemarkReply = async (context, br_raster) => {
       subject: br_reply.textContent,
       icon: 'Comment',
       inreplyto: conversation_global,
-      creationDate: creationdateFormated,
-      date: dateFormated
     },
     br_raster.attributes,
     xfdf_text,
@@ -911,39 +813,12 @@ const createSignature = async (context, br_signature, instance) => {
   const diffX = tX - tOX;
   const diffY = tY - tOY;
 
-  const creationtime = br_signature.attributes.creationtime.nodeValue;
-  const time = br_signature.attributes.time.nodeValue;
-
-  // Get the creation and modified date
-  let creationdateFormated = "";
-  let dateFormated = "";
-
-  // creationtime is a Unix timestamp
-  let dateC = new Date(creationtime * 1000);
-
-  let monthC = dateC.getMonth();
-  if (monthC.toString().length === 1)
-    monthC = "0" + monthC;
-
-  creationdateFormated = "D:" + dateC.getFullYear() + monthC + dateC.getDay() + dateC.getHours() + dateC.getMinutes() + dateC.getSeconds() + "-08'00'";
-
-  // time is a Unix timestamp
-  let date = new Date(time * 1000);
-
-  let month = date.getMonth();
-  if (month.toString().length === 1)
-    month = "0" + month;
-
-  dateFormated = "D:" + date.getFullYear() + month + date.getDay() + date.getHours() + date.getMinutes() + date.getSeconds() + "-08'00'";
-
   setXfdfAttributes(
     {
       page: pageIndex,
       rect: `${minX + (diffX / 2)},${minY + (diffY / 2)},${maxX - (diffX / 2)},${maxY - (diffY / 2)}`,
       title: authorName,
-      subject: 'Stamp',
-      creationDate: creationdateFormated,
-      date: dateFormated
+      subject: 'Stamp'
     },
     br_signature.attributes,
     xfdf_stampNode,
@@ -986,37 +861,6 @@ const createStampNode = async (context, br_raster, isChangeView = false, ocgLaye
       maxY,
     } = rectPoints;
 
-    const timeAttr = br_raster.getAttribute("time")
-    const creationTimeAttr = br_raster.getAttribute("creationtime");
-    if (!creationTimeAttr && timeAttr) {
-      br_raster.setAttribute("creationtime", br_raster.getAttribute("time")); // Replace with appropriate default
-    }
-
-    const creationtime = br_raster.attributes.creationtime.nodeValue;
-    const time = br_raster.attributes.time.nodeValue;
-
-    // Get the creation and modified date
-    let creationdateFormated = "";
-    let dateFormated = "";
-
-    // creationtime is a Unix timestamp
-    let dateC = new Date(creationtime * 1000);
-
-    let monthC = dateC.getMonth();
-    if (monthC.toString().length === 1)
-      monthC = "0" + monthC;
-
-    creationdateFormated = "D:" + dateC.getFullYear() + monthC + dateC.getDay() + dateC.getHours() + dateC.getMinutes() + dateC.getSeconds() + "-08'00'";
-
-    // time is a Unix timestamp
-    let date = new Date(time * 1000);
-
-    let month = date.getMonth();
-    if (month.toString().length === 1)
-      month = "0" + month;
-
-    dateFormated = "D:" + date.getFullYear() + month + date.getDay() + date.getHours() + date.getMinutes() + date.getSeconds() + "-08'00'";
-
     const xfdf_stampNode = outXfdfDoc.createElement('stamp');
 
     setXfdfAttributes(
@@ -1027,8 +871,6 @@ const createStampNode = async (context, br_raster, isChangeView = false, ocgLaye
         subject: 'Stamp',
         rotation: context.pageRotationDegree, //Set rotation to the page rotation in the Stamp element since the image will be at 0 degrees
 		//rotation: rotationDegree,
-        creationDate: creationdateFormated,
-        date: dateFormated,
       },
       br_raster.attributes,
       xfdf_stampNode,
@@ -1058,6 +900,7 @@ const createStampNode = async (context, br_raster, isChangeView = false, ocgLaye
       maxX,
       maxY,
     } = rectPoints;
+	
 
     // Get the OCG layers
     const viewstate = find(br_raster.childNodes, { nodeName: 'Viewstate' });
@@ -1093,31 +936,7 @@ const createStampNode = async (context, br_raster, isChangeView = false, ocgLaye
       console.warn(`ChangeMark on page ${pageIndex} does not have a title, using default title.`);
     }
     // eslint-disable-next-line no-param-reassign
-    const creationtime = br_raster.attributes.creationtime.nodeValue;
-    const time = br_raster.attributes.time.nodeValue;
-
-    // Get the creation and modified date
-    let creationdateFormated = "";
-    let dateFormated = "";
-
-    // creationtime is a Unix timestamp
-    let dateC = new Date(creationtime * 1000);
-
-    let monthC = dateC.getMonth();
-    if (monthC.toString().length === 1)
-      monthC = "0" + monthC;
-
-    creationdateFormated = "D:" + dateC.getFullYear() + monthC + dateC.getDay() + dateC.getHours() + dateC.getMinutes() + dateC.getSeconds() + "-08'00'";
-
-    // time is a Unix timestamp
-    let date = new Date(time * 1000);
-
-    let month = date.getMonth();
-    if (month.toString().length === 1)
-      month = "0" + month;
-
-    dateFormated = "D:" + date.getFullYear() + month + date.getDay() + date.getHours() + date.getMinutes() + date.getSeconds() + "-08'00'";
-
+    
     const xfdf_stampNode = outXfdfDoc.createElement('stamp');
     setXfdfAttributes(
       {
@@ -1131,9 +950,7 @@ const createStampNode = async (context, br_raster, isChangeView = false, ocgLaye
          rotation: context.pageRotationDegree, //Set rotation to the page rotation in the Stamp element since the image will be at 0 degrees		
 		//rotation: rotationDegree,
         //pagePosition: `${minX},${minY},${maxX},${maxY}`,
-        ocgLayers: ocgLayerArray,
-        creationdate: creationdateFormated,
-        date: dateFormated
+        ocgLayers: ocgLayerArray
       },
       br_raster.attributes,
       xfdf_stampNode,
@@ -1327,10 +1144,7 @@ const createStampNode = async (context, br_raster, isChangeView = false, ocgLaye
 			"rotation" : 0, 
 			"zoom" : pageZoom
 		  }, 
-		  "author" : authorName, 
 		  "id": id, 
-		  "creationtime": creationtime, 
-		  "time": time, 
 		  "guid": guid , 
 		  "color" : color,
 		  "hyperlink" : hyperlink, 
@@ -1381,31 +1195,6 @@ const createHighlight = async (context, br_highlight) => {
     coords = (coords && `${coords},${subCoordsStr}`) || subCoordsStr;
   });
 
-  const creationtime = br_highlight.attributes.creationtime.nodeValue;
-  const time = br_highlight.attributes.time.nodeValue;
-
-  // Get the creation and modified date
-  let creationdateFormated = "";
-  let dateFormated = "";
-
-  // creationtime is a Unix timestamp
-  let dateC = new Date(creationtime * 1000);
-
-  let monthC = dateC.getMonth();
-  if (monthC.toString().length === 1)
-    monthC = "0" + monthC;
-
-  creationdateFormated = "D:" + dateC.getFullYear() + monthC + dateC.getDay() + dateC.getHours() + dateC.getMinutes() + dateC.getSeconds() + "-08'00'";
-
-  // time is a Unix timestamp
-  let date = new Date(time * 1000);
-
-  let month = date.getMonth();
-  if (month.toString().length === 1)
-    month = "0" + month;
-
-  dateFormated = "D:" + date.getFullYear() + month + date.getDay() + date.getHours() + date.getMinutes() + date.getSeconds() + "-08'00'";
-
   const xfdf_highlight = outXfdfDoc.createElement('highlight');
   setXfdfAttributes(
     {
@@ -1414,9 +1203,7 @@ const createHighlight = async (context, br_highlight) => {
       coords,
       subject: 'Highlight',
       title: authorName,
-      opacity: 0.5,
-      creationDate: creationdateFormated,
-      date: dateFormated
+      opacity: 0.5
     },
     br_highlight.attributes,
     xfdf_highlight,
@@ -1451,7 +1238,7 @@ const createGeometryGroup = async (context, br_geometryGroup) => {
     });
     i += nPoints;
   });
-
+  
   const createTextOverlayNode = ({ nodeName, subject, geometryFilterType }) => {
     const xfdf_textOverlay = outXfdfDoc.createElement(nodeName);
     const filteredGeometryArr = filter(geometryDataArr, { type: geometryFilterType });
@@ -1564,7 +1351,7 @@ const createRedact = async (context, br_blockout) => {
     maxX,
     maxY,
   } = rectPoints;
-
+  
   const xfdf_redact = outXfdfDoc.createElement('polygon');
   setXfdfAttributes(
     {

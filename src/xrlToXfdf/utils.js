@@ -188,6 +188,34 @@ const getDashStyle = (linestyleAttr, drawstyleAttr, width) => {
   return dashStyle;
 };
 
+const getCreationTime = (creationtimeAttr) => {
+  let dateC = new Date(creationtimeAttr.nodeValue * 1000);
+
+  let monthC = dateC.getMonth();
+  if (monthC.toString().length === 1) monthC = "0" + monthC;
+
+  let creationdateFormated = "D:" + dateC.getFullYear() + monthC + dateC.getDay() + dateC.getHours() + dateC.getMinutes() + dateC.getSeconds();// + "-08'00'";
+    
+  let offset = dateC.getTimezoneOffset();
+  if (offset === 0) {
+    creationdateFormated += "+00'00";
+  } else {
+    if (offset < 0) {
+      creationdateFormated += '+';
+      offset *= -1;
+    } else {
+      creationdateFormated += '-';
+    }
+
+    const hOffset = parseInt(offset / 60, 10);
+    const mOffset = offset % 60;
+    creationdateFormated += `${pad(hOffset.toString())}'`;
+    creationdateFormated += `${pad(mOffset.toString())}'`;
+  }
+  
+  return creationdateFormated;
+}
+
 export const setXfdfAttributes = (extraAttributes, br_attributes, xfdf_node, context = {}) => {
   const {
     primaryAnnotationId, groupId = '', isImage, wvHeight,
@@ -195,17 +223,22 @@ export const setXfdfAttributes = (extraAttributes, br_attributes, xfdf_node, con
 
   const {
     guid: guidAttr,
-    creationtime: creationtimeAttr,
+	time: timeAttr,
     color: colorAttr,
     linewidth: linewidthAttr,
     drawstyle: drawstyleAttr,
     linestyle: linestyleAttr,
   } = br_attributes;
 
+  //if creationtime doesn't exist, use the time attribute
+  var creationtimeAttr = br_attributes.creationtime;  
+  if (!creationtimeAttr && timeAttr) creationtimeAttr = timeAttr;
+    
   const width = getLineWidth(isImage, linewidthAttr, wvHeight);
   const color = colorAttr && `#${rgbToHex(...colorAttr.value.split('|'))}`;
   const interiorColor = getInteriorColor(color, drawstyleAttr);
-  const date = toXmlDate(new Date(parseInt(creationtimeAttr.value, 10)));
+  const datetime = getCreationTime(timeAttr);
+  const createtime = getCreationTime(creationtimeAttr); //toXmlDate(new Date(parseInt(creationtimeAttr.value, 10)));
   setXfdfAttributesBare({
     // We need groupId for a group because guid is not unique for groups
     name: groupId ? `${groupId}-${guidAttr.value}` : `${guidAttr.value}`,
@@ -213,8 +246,8 @@ export const setXfdfAttributes = (extraAttributes, br_attributes, xfdf_node, con
     // But I can't remember what file caused it.
     // ....waiting on someone else to have this problem.
     // name: guidGenerator(),
-    date,
-    creationdate: date,
+    date: datetime,
+    creationdate: createtime,
     ...(width && { width }),
     ...(extraAttributes.color !== null && color && { color }),
     ...interiorColor,
@@ -262,15 +295,20 @@ export const setXfdfAttributes2 = (extraAttributes, br_attributes, xfdf_node, co
 
   const {
     guid: guidAttr,
-    creationtime: creationtimeAttr,
+    time: timeAttr,
   } = br_attributes;
 
-  const date = toXmlDate(new Date(parseInt(creationtimeAttr.value, 10)));
+  //if creationtime doesn't exist, use the time attribute  
+  var creationtimeAttr = br_attributes.creationtime;  
+  if (!creationtimeAttr && timeAttr) creationtimeAttr = timeAttr;
+  
+  const datetime = getCreationTime(timeAttr);
+  const createtime = getCreationTime(creationtimeAttr); //toXmlDate(new Date(parseInt(creationtimeAttr.value, 10)));
   setXfdfAttributesBare({
     // We need groupId for a group because guid is not unique for groups
     name: groupId ? `${groupId}-${guidAttr.value}` : `${guidAttr.value}`,
-    date,
-    creationdate: date,
+    date: datetime,
+    creationdate: createtime,
   }, xfdf_node);
   setXfdfAttributesBare(extraAttributes, xfdf_node);
 
