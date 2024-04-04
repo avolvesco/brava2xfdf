@@ -189,6 +189,14 @@ const getDashStyle = (linestyleAttr, drawstyleAttr, width) => {
 };
 
 const getCreationTime = (creationtimeAttr) => {
+	
+  const pad = (str) => {
+    if (str.length < 2) {
+      return `0${str}`;
+    }
+    return str;
+  };
+  
   let dateC = new Date(creationtimeAttr.nodeValue * 1000);
 
   let monthC = dateC.getMonth();
@@ -198,7 +206,7 @@ const getCreationTime = (creationtimeAttr) => {
     
   let offset = dateC.getTimezoneOffset();
   if (offset === 0) {
-    creationdateFormated += "+00'00";
+    creationdateFormated += "+00'00'";
   } else {
     if (offset < 0) {
       creationdateFormated += '+';

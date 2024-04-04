@@ -1128,7 +1128,8 @@ const createStampNode = async (context, br_raster, isChangeView = false, ocgLaye
     const color = br_raster.attributes.color.nodeValue;
     const hyperlink = br_raster.attributes.hyperlink.nodeValue;
     const comment = br_raster.attributes.comment.nodeValue;
-
+	const itemTitle = br_raster.attributes.Title.nodeValue;
+	
 	//START handle scenarios where LayerTable/LayerBlock, State, StateColor, Category elements don't exist in the XRL.
     var bytesData = {
 		 //ImageData should be placed within the imagedata element rather than in here                    
@@ -1146,11 +1147,12 @@ const createStampNode = async (context, br_raster, isChangeView = false, ocgLaye
 		  }, 
 		  "id": id, 
 		  "guid": guid , 
-		  "color" : color,
-		  "hyperlink" : hyperlink, 
-		  "comment" : comment
+		  "color" : color,		  
+		  "title": itemTitle
 	};
-				
+	
+	if (hyperlink !== "") bytesData["hyperlink"] = hyperlink;
+	if (comment !== "") bytesData["comment"] = comment;	
     if (br_state !== undefined) bytesData["state"] = br_state.textContent;
     if (br_state_color !== undefined) bytesData["stateColor"] = br_state_color.textContent;
     if (br_category !== undefined) bytesData["category"] = br_category.textContent;
