@@ -119,7 +119,7 @@ export const setXfdfAttributesBare = (attributes, elementNode) => {
   });
 };
 
-const getLineWidth = (isImage, linewidthAttr, wvHeight) => {
+const getLineWidth = (isImage, xfdf_node, linewidthAttr, wvHeight) => {
   // Special case:
   // If the document is an image then the resulting width for annotations needs to be a lot smaller
   // and is a fuction of the height of the page.
@@ -131,7 +131,9 @@ const getLineWidth = (isImage, linewidthAttr, wvHeight) => {
   let width = 0;
   if (linewidthAttr) {
     const linestyleAttrValue = parseFloat(linewidthAttr.value, 10);
-    if (isImage) {
+	if (xfdf_node.nodeName === "polygon") {
+	  width = (linestyleAttrValue * 10 * 0.5).toFixed(1);
+    } else if (isImage) {
       width = (linestyleAttrValue * 10) / (700 / wvHeight);
     } else {
       width = linestyleAttrValue * (wvHeight / 64.8096192384);
@@ -236,13 +238,13 @@ export const setXfdfAttributes = (extraAttributes, br_attributes, xfdf_node, con
     linewidth: linewidthAttr,
     drawstyle: drawstyleAttr,
     linestyle: linestyleAttr,
-  } = br_attributes;
+ } = br_attributes;
 
   //if creationtime doesn't exist, use the time attribute
   var creationtimeAttr = br_attributes.creationtime;  
   if (!creationtimeAttr && timeAttr) creationtimeAttr = timeAttr;
     
-  const width = getLineWidth(isImage, linewidthAttr, wvHeight);
+  const width = getLineWidth(isImage, xfdf_node, linewidthAttr, wvHeight);
   const color = colorAttr && `#${rgbToHex(...colorAttr.value.split('|'))}`;
   const interiorColor = getInteriorColor(color, drawstyleAttr);
   const datetime = getCreationTime(timeAttr);

@@ -282,7 +282,7 @@ const createNodeWithVertices = async (
   const xfdf_node = outXfdfDoc.createElement(outType);
   setXfdfAttributes(
     {
-      page: pageIndex,
+	  page: pageIndex,
       title: authorName,
       rect: `${minX},${minY},${maxX},${maxY}`,
       ...style
@@ -616,7 +616,7 @@ const createFreeTextNode = async (context, br_text) => {
 	var elLines = br_text.querySelectorAll("TextLine");
 	for (var idx = 0, len = elLines.length; idx < len; idx++)
 		text += (text === "" ? "" : '\r\n') + elLines[idx].innerHTML;
-
+	
 	//Get the font size adjusted to a scale factor
 	var bravaFontSize = Math.floor(parseFloat(fontVal) / 0.0352778 * 8);
 	var txtWidth = size.maxX - size.minX , txtHeight = size.maxY - size.minY;
@@ -713,6 +713,7 @@ const createFreeTextNode = async (context, br_text) => {
       xfdf_defaultstyleNode.textContent = `font: '${fontAttr.value}' ${txtMetrics.fontSize}; text-align: center;`; //Include the font face and size to the default style
       break;
   }
+  xfdf_defaultstyleNode.textContent += ' text-vertical-align: center;';
   
   //Support bold, italics, underline settings from the Brava markup
   var isBold = br_text.getAttribute("bold") === "true", isItalic = br_text.getAttribute("italic") === "true", isUnderline = br_text.getAttribute("underline") === "true";
