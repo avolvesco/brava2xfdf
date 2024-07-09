@@ -102,9 +102,11 @@ const applyMatrixToPoints = ({
   const {
     v1 = {}, v2 = {}, v3 = {}, v4 = {},
   } = CDLInfo;
-  const isOldVersion = v1.textContent === '5' && v2.textContent === '3' && v3.textContent === '0' && v4.textContent === '99';
+  var version = v1.textContent+"."+ v2.textContent+"." +  v3.textContent+"."+ v4.textContent;  
+  var processPoints = ["5.3.0.99"].includes(version);	//If true, need to further convert the points
+  if (!processPoints && isText && v1.ownerDocument.getElementsByTagName("Text").length === 1 && ["5.9.0.99"].includes(version)) processPoints = true;
 
-  if (!isText || !oldVersionFix || !isOldVersion || isCAD) {
+  if (!isText || !oldVersionFix || !processPoints || isCAD) {
     return {
       points,
       rectPoints: {
@@ -601,7 +603,13 @@ const createFreeTextNode = async (context, br_text) => {
 		   var scaleFactor = minRatioThreshold - (totalHeight/height);
 		   var newFontSize = Math.abs(Math.ceil(fontSize + fontSize * scaleFactor));
 		   if (newFontSize<=fontSize) newFontSize = fontSize + 1;
-		   fontSize = newFontSize;
+		   fontSize = newFontSize;		
+		   
+		   if (lines.length === 1) {
+			   ctx.font = `${fontSize}pt ${fontFace}`;
+			   metrics = ctx.measureText(text);
+			   if (metrics.width > width) width = metrics.width;
+		   }
 		}
 		//If height is just right but exceeds width, extend the width of the freetext to fit
 		//This is the behavior in the Brava HTML viewer
@@ -614,9 +622,10 @@ const createFreeTextNode = async (context, br_text) => {
 	//Get all the lines in the text annotation
 	var text = "";
 	var elLines = br_text.querySelectorAll("TextLine");
-	for (var idx = 0, len = elLines.length; idx < len; idx++)
-		text += (text === "" ? "" : '\r\n') + elLines[idx].innerHTML;
-	
+	for (var idx = 0, len = elLines.length; idx < len; idx++) {
+		if (elLines[idx].innerHTML !== "")
+			text += (text === "" ? "" : '\r\n') + elLines[idx].innerHTML;
+	}
 	//Get the font size adjusted to a scale factor
 	var bravaFontSize = Math.floor(parseFloat(fontVal) / 0.0352778 * 8);
 	var txtWidth = size.maxX - size.minX , txtHeight = size.maxY - size.minY;
@@ -626,6 +635,7 @@ const createFreeTextNode = async (context, br_text) => {
 	}
 	let txtMetrics = convertBravaTextMetrics(text, fontAttr.value, bravaFontSize, txtWidth, txtHeight);
 	let fontFace = fontAttr.value.replace(/\s+/g, ""), fontSize = txtMetrics.fontSize.replace("pt", "");
+	
 	//Adjust the size according to the pageRotation
 	switch (context.pageRotationDegree) {
 		case 90:
@@ -689,7 +699,8 @@ const createFreeTextNode = async (context, br_text) => {
   const br_textLines = br_text.getElementsByTagName('TextLine');
   let textContent = '';
   forEach(br_textLines, (br_textLine) => {
-    textContent = (textContent && `${textContent}\n${br_textLine.textContent}`) || br_textLine.textContent;
+	if (br_textLine.textContent !== "") 
+		textContent = textContent + (textContent === "" ? "" : '\n') + br_textLine.textContent;
   });
   const xfdf_contentsNode = outXfdfDoc.createElement('contents');
   xfdf_contentsNode.textContent = textContent;

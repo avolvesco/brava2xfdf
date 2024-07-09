@@ -198,13 +198,22 @@ const getCreationTime = (creationtimeAttr) => {
     }
     return str;
   };
-  
+    
   let dateC = new Date(creationtimeAttr.nodeValue * 1000);
 
-  let monthC = dateC.getMonth();
+  let monthC = (dateC.getMonth() + 1) + "";
   if (monthC.toString().length === 1) monthC = "0" + monthC;
-
-  let creationdateFormated = "D:" + dateC.getFullYear() + monthC + dateC.getDay() + dateC.getHours() + dateC.getMinutes() + dateC.getSeconds();// + "-08'00'";
+  else  monthC +="";
+	
+  let dayC = dateC.getDate()+"";
+  if (dayC.toString().length === 1) dayC = "0" + dayC;
+  let hourC = dateC.getHours()+"";
+  if (hourC.toString().length === 1) hourC = "0" + hourC;
+  let minC = dateC.getMinutes()+"";
+  if (minC.toString().length === 1) minC = "0" + minC;
+  let secC = dateC.getSeconds()+"";
+  if (secC.toString().length === 1) secC = "0" + secC;
+  let creationdateFormated = "D:" + dateC.getFullYear() + monthC + dayC + hourC + minC + secC;// + "-08'00'";
     
   let offset = dateC.getTimezoneOffset();
   if (offset === 0) {
