@@ -523,11 +523,18 @@ const createFreeTextNode = async (context, br_text) => {
 */
 
 	let size = {minX: minX, minY: minY, maxX: maxX, maxY: maxY};
-	const convertBravaTextMetrics = function (text, fontFace, fontSize, width, height) {
+	const convertBravaTextMetrics = function (text, fontFace, fontSize, width, height, txtRotation) {
 		let canvas = document.createElement('canvas');
 		let ctx = canvas.getContext('2d');
 		ctx.font = `${fontSize}pt ${fontFace}`;
-
+		var txtWidth = width, txtHeight =  height;
+		
+		//If text is rotated, we need to switch the width and height
+		if (txtRotation == 90 || txtRotation == 270) {
+			txtWidth = height;
+			txtHeight = width;
+		}
+		console.log(text+" width:" + width+" height: "+height + " context.pageRotationDegree:"+context.pageRotationDegree+" rotationDegree:"+rotationDegree);
 		ctx.textBaseline = 'middle';
 		ctx.textAlign = "left";
 		const lines = text.split(/\r\n/);
@@ -555,7 +562,7 @@ const createFreeTextNode = async (context, br_text) => {
 				//Calculate the width and height of the text
 				var metrics = ctx.measureText(word);
 				var wordWidth = metrics.width, wordHeight = metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent;
-				var fitLine = width > (lineWidth + wordWidth);
+				var fitLine = txtWidth > (lineWidth + wordWidth);
 				
 				//Determine if the word fits the line, just append the word to the current line
 				if (fitLine) {
@@ -592,15 +599,18 @@ const createFreeTextNode = async (context, br_text) => {
 		var maxRatioThreshold = 0.99, minRatioThreshold = 0.75;
 		
 		//If text did not fit the height, reduce the font size and try again
-		if (totalHeight > height) {
-		   var scaleFactor = maxRatioThreshold - (totalHeight/height);
+		if (totalHeight > txtHeight) {
+		   var scaleFactor = maxRatioThreshold - (totalHeight/txtHeight);
 		   var newFontSize = Math.abs(Math.ceil(fontSize - fontSize * scaleFactor));
 		   if (newFontSize>=fontSize) newFontSize = fontSize - 1;
-		   return convertBravaTextMetrics(text, fontFace, newFontSize, width, height)
+		   if (txtRotation == 90 || txtRotation == 270) 
+			   return convertBravaTextMetrics(text, fontFace, newFontSize, txtHeight, txtWidth, txtRotation)
+		   else
+			   return convertBravaTextMetrics(text, fontFace, newFontSize, txtWidth, txtHeight, txtRotation)
 		}
 		//If the totalHeight is below minRatioThreshold, we need to increase the font size to fill the spaces
-		else if (totalHeight/height < minRatioThreshold) {
-		   var scaleFactor = minRatioThreshold - (totalHeight/height);
+		else if (totalHeight/txtHeight < minRatioThreshold) {
+		   var scaleFactor = minRatioThreshold - (totalHeight/txtHeight);
 		   var newFontSize = Math.abs(Math.ceil(fontSize + fontSize * scaleFactor));
 		   if (newFontSize<=fontSize) newFontSize = fontSize + 1;
 		   fontSize = newFontSize;		
@@ -608,14 +618,18 @@ const createFreeTextNode = async (context, br_text) => {
 		   if (lines.length === 1) {
 			   ctx.font = `${fontSize}pt ${fontFace}`;
 			   metrics = ctx.measureText(text);
-			   if (metrics.width > width) width = metrics.width;
-		   }
+			   if (metrics.width > width) txtWidth = metrics.width;
+		   } 
 		}
 		//If height is just right but exceeds width, extend the width of the freetext to fit
 		//This is the behavior in the Brava HTML viewer
-		else if (totalWidth > width) width = totalWidth;
+		else if (totalWidth > txtWidth) txtWidth = totalWidth;
 		
-		return {width: width, height: height, fontSize: fontSize+"pt"};
+		//If text is rotated, we need to switch the width and height
+		if (txtRotation == 90 || txtRotation == 270) 
+			return {width: txtHeight, height: txtWidth, fontSize: fontSize+"pt"};
+		else 
+			return {width: txtWidth, height: txtHeight, fontSize: fontSize+"pt"};
 		
 	};
 
@@ -629,11 +643,14 @@ const createFreeTextNode = async (context, br_text) => {
 	//Get the font size adjusted to a scale factor
 	var bravaFontSize = Math.floor(parseFloat(fontVal) / 0.0352778 * 8);
 	var txtWidth = size.maxX - size.minX , txtHeight = size.maxY - size.minY;
+	var txtRotation = Math.abs(rotationDegree - context.pageRotationDegree); 
+	console.log("txtRotation:"+txtRotation);
 	if (context.pageRotationDegree == 90 || context.pageRotationDegree == 270) {
 		txtHeight = size.maxX - size.minX;
 		txtWidth = size.maxY - size.minY;
 	}
-	let txtMetrics = convertBravaTextMetrics(text, fontAttr.value, bravaFontSize, txtWidth, txtHeight);
+	
+	let txtMetrics = convertBravaTextMetrics(text, fontAttr.value, bravaFontSize, txtWidth, txtHeight, txtRotation);
 	let fontFace = fontAttr.value.replace(/\s+/g, ""), fontSize = txtMetrics.fontSize.replace("pt", "");
 	
 	//Adjust the size according to the pageRotation
@@ -655,7 +672,8 @@ const createFreeTextNode = async (context, br_text) => {
 			size.maxY = size.minY + txtMetrics.height;
 			break;
 	}
-
+	console.log("txtMetrics.width:"+txtMetrics.width +" txtMetrics.height:" + txtMetrics.height);
+	
 	//END Changed logic for calculating the FreeText font size by using the Canvas measureText method so it can handle any font size from Brava text annotations. 
 
   let copyAttributes = {
@@ -666,7 +684,8 @@ const createFreeTextNode = async (context, br_text) => {
     TextColor: `#${rgbToHex(...colorAttr.value.split('|'))}`,
     FontSize: txtMetrics.fontSize.replace("pt", ""), //Use the font size we got from the calculation	 
     width: "0", // border always applied. So, set it to zero by default.
-    rotation: context.pageRotationDegree //Set appropriate rotation in the Freetext element
+    rotation: rotationDegree
+	//rotation: context.pageRotationDegree //Set appropriate rotation in the Freetext element
   };
 
   if (opaqueAttr.value === 'secondarycolor') {
@@ -881,8 +900,7 @@ const createStampNode = async (context, br_raster, isChangeView = false, ocgLaye
         rect: `${minX},${minY},${maxX},${maxY}`,
         title: authorName,
         subject: 'Stamp',
-        rotation: context.pageRotationDegree, //Set rotation to the page rotation in the Stamp element since the image will be at 0 degrees
-		//rotation: rotationDegree,
+        rotation: rotationDegree,
       },
       br_raster.attributes,
       xfdf_stampNode,
