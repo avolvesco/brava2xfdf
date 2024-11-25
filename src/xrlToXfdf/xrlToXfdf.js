@@ -527,14 +527,12 @@ const createFreeTextNode = async (context, br_text) => {
 		let canvas = document.createElement('canvas');
 		let ctx = canvas.getContext('2d');
 		ctx.font = `${fontSize}pt ${fontFace}`;
-		var txtWidth = width, txtHeight =  height;
-		
+		var txtWidth = width, txtHeight = height;		
 		//If text is rotated, we need to switch the width and height
 		if (txtRotation == 90 || txtRotation == 270) {
 			txtWidth = height;
 			txtHeight = width;
 		}
-		console.log(text+" width:" + width+" height: "+height + " context.pageRotationDegree:"+context.pageRotationDegree+" rotationDegree:"+rotationDegree);
 		ctx.textBaseline = 'middle';
 		ctx.textAlign = "left";
 		const lines = text.split(/\r\n/);
@@ -613,13 +611,15 @@ const createFreeTextNode = async (context, br_text) => {
 		   var scaleFactor = minRatioThreshold - (totalHeight/txtHeight);
 		   var newFontSize = Math.abs(Math.ceil(fontSize + fontSize * scaleFactor));
 		   if (newFontSize<=fontSize) newFontSize = fontSize + 1;
-		   fontSize = newFontSize;		
-		   
+		   fontSize = newFontSize;			
+		   var newHeight = 0;
 		   if (lines.length === 1) {
 			   ctx.font = `${fontSize}pt ${fontFace}`;
-			   metrics = ctx.measureText(text);
-			   if (metrics.width > width) txtWidth = metrics.width;
-		   } 
+			   metrics = ctx.measureText(text);			   
+			   newHeight = totalHeight + metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent;
+			   //if new height is greater than height, just extend the width
+			   if (metrics.width > width && newHeight > txtHeight) txtWidth = metrics.width;
+		   }					   
 		}
 		//If height is just right but exceeds width, extend the width of the freetext to fit
 		//This is the behavior in the Brava HTML viewer
@@ -672,7 +672,7 @@ const createFreeTextNode = async (context, br_text) => {
 			size.maxY = size.minY + txtMetrics.height;
 			break;
 	}
-	console.log("txtMetrics.width:"+txtMetrics.width +" txtMetrics.height:" + txtMetrics.height);
+	console.log("txtMetrics.width:"+txtMetrics.width +" txtMetrics.height:" + txtMetrics.height +" context.pageRotationDegree: "+context.pageRotationDegree);
 	
 	//END Changed logic for calculating the FreeText font size by using the Canvas measureText method so it can handle any font size from Brava text annotations. 
 
