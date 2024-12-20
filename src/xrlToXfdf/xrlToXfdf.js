@@ -527,7 +527,7 @@ const createFreeTextNode = async (context, br_text) => {
 		let canvas = document.createElement('canvas');
 		let ctx = canvas.getContext('2d');
 		ctx.font = `${fontSize}pt ${fontFace}`;
-		var txtWidth = width, txtHeight = height;		
+		var txtWidth = width, txtHeight = height;	
 		//If text is rotated, we need to switch the width and height
 		if (txtRotation == 90 || txtRotation == 270) {
 			txtWidth = height;
@@ -571,7 +571,7 @@ const createFreeTextNode = async (context, br_text) => {
 				//If the non-space word no longer fits the line, add it as a new line
 				else if (word.trim() !== "") {
 					//Update the totalWidth and totalHeight of text
-					totalHeight += wordHeight;
+					totalHeight += wordHeight;		   
 					if (totalWidth < lineWidth) totalWidth = lineWidth;
 					if ( idx === 0 && currentLine.trim() != "")
 						newLines.push(currentLine.trim())
@@ -582,6 +582,7 @@ const createFreeTextNode = async (context, br_text) => {
 				
 				//If the last word of the line, push the entire line into the newLine array.
 				if (jdx === jlen - 1) {
+					currentLine += word;
 					metrics = ctx.measureText(currentLine.trim());
 					lineWidth = metrics.width;
 					totalHeight += metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent;
@@ -590,6 +591,7 @@ const createFreeTextNode = async (context, br_text) => {
 					currentLine = "";
 					lineWidth = 0;
 				}
+				
 			}
 		}
 		
@@ -597,10 +599,11 @@ const createFreeTextNode = async (context, br_text) => {
 		var maxRatioThreshold = 0.99, minRatioThreshold = 0.75;
 		
 		//If text did not fit the height, reduce the font size and try again
-		if (totalHeight > txtHeight) {
-		   var scaleFactor = maxRatioThreshold - (totalHeight/txtHeight);
-		   var newFontSize = Math.abs(Math.ceil(fontSize - fontSize * scaleFactor));
-		   if (newFontSize>=fontSize) newFontSize = fontSize - 1;
+		if (totalHeight > txtHeight) {		
+		   //if the text fits with more than 1 line, just reduce the font size.		
+		   var scaleFactor = maxRatioThreshold - (newLines.length == 1? (totalHeight/txtHeight): 0.85);
+		   var newFontSize = Math.abs(Math.ceil(fontSize - Math.abs(fontSize * scaleFactor)));
+		   if (newFontSize>=fontSize) newFontSize = fontSize - 1;		   
 		   if (txtRotation == 90 || txtRotation == 270) 
 			   return convertBravaTextMetrics(text, fontFace, newFontSize, txtHeight, txtWidth, txtRotation)
 		   else
@@ -609,7 +612,7 @@ const createFreeTextNode = async (context, br_text) => {
 		//If the totalHeight is below minRatioThreshold, we need to increase the font size to fill the spaces
 		else if (totalHeight/txtHeight < minRatioThreshold) {
 		   var scaleFactor = minRatioThreshold - (totalHeight/txtHeight);
-		   var newFontSize = Math.abs(Math.ceil(fontSize + fontSize * scaleFactor));
+		   var newFontSize = Math.abs(Math.ceil(fontSize + Math.abs(fontSize * scaleFactor)));
 		   if (newFontSize<=fontSize) newFontSize = fontSize + 1;
 		   fontSize = newFontSize;			
 		   var newHeight = 0;
@@ -649,6 +652,9 @@ const createFreeTextNode = async (context, br_text) => {
 		txtHeight = size.maxX - size.minX;
 		txtWidth = size.maxY - size.minY;
 	}
+	
+	//If font is not Arial and Times New Roman, use the Arial font so we can calculate the fontSize correctly
+	if (fontAttr.value !== "Arial" && fontAttr.value !== "Times New Roman") fontAttr.value = "Helvetica";
 	
 	let txtMetrics = convertBravaTextMetrics(text, fontAttr.value, bravaFontSize, txtWidth, txtHeight, txtRotation);
 	let fontFace = fontAttr.value.replace(/\s+/g, ""), fontSize = txtMetrics.fontSize.replace("pt", "");
