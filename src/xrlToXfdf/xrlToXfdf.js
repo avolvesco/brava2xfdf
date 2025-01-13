@@ -1164,7 +1164,12 @@ const createStampNode = async (context, br_raster, isChangeView = false, ocgLaye
     const color = br_raster.attributes.color.nodeValue;
     const hyperlink = br_raster.attributes.hyperlink.nodeValue;
     const comment = br_raster.attributes.comment.nodeValue;
-	const itemTitle = br_raster.attributes.Title.nodeValue;
+	var itemTitle = br_raster.attributes.Title !==undefined? br_raster.attributes.Title.nodeValue: "";
+	
+	if (itemTitle === "") {
+		const br_Title = find(br_raster.childNodes, { nodeName: 'Title' });
+		if (br_Title !== undefined) itemTitle = br_Title.textContent;
+	}
 	
 	//START handle scenarios where LayerTable/LayerBlock, State, StateColor, Category elements don't exist in the XRL.
     var bytesData = {
