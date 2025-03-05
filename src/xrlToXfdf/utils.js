@@ -33,6 +33,329 @@ export const textGroupTypeProxy = new window.Proxy(textGroupTypeMap, {
   },
 });
 
+const measureSystemMaps = {
+	"english": [
+		{
+			"name": "1:1", //"Full Size (1:1)",
+			"value": 1
+		},
+		{
+			"name": "1:2", //"Half Size (1:2)",
+			"value": 2
+		},
+		{
+			"name": "3 in = 1 ft-in", //"3\"=1'-0\"",
+			"precision": "8",
+			"value": 4
+		},
+		{
+			"name": "1.5 in = 1 ft-in", //"1 1/2\"=1'-0\"",
+			"precision": "8",
+			"value": 8
+		},
+		{
+			"name": "1 in = 1 ft-in", //"1\"=1'-0\"",
+			"precision": "8",
+			"value": 12
+		},
+		{
+			"name": "0.75 in = 1 ft-in", //"3/4\"=1'-0\"",
+			"precision": "8",
+			"value": 16
+		},
+		{
+			"name": "0.5 in = 1 ft-in", //"1/2\"=1'-0\"",
+			"precision": "8",
+			"value": 24
+		},
+		{
+			"name": "0.375 in = 1 ft-in", //"3/8\"=1'-0\"",
+			"precision": "8",
+			"value": 32
+		},
+		{
+			"name": "0.25 in = 1 ft-in", //"1/4\"=1'-0\"",
+			"precision": "8",
+			"value": 48
+		},
+		{
+			"name": "0.1875 in = 1 ft-in", //"3/16\"=1'-0\"",
+			"precision": "16",
+			"value": 64
+		},
+		{
+			"name": "0.125 in = 1 ft-in",//"1/8\"=1'-0\"",
+			"precision": "8",
+			"value": 96
+		},
+		{
+			"name": "0.09375 in = 1 ft-in", //"3/32\"=1'-0\"",
+			"precision": "32",
+			"value": 128
+		},
+		{
+			"name": "0.0625 in = 1 ft-in", //"1/16\"=1'-0\"",
+			"precision": "16",
+			"value": 192
+		},
+		{
+			"name": "1:10",
+			"value": 10
+		},
+		{
+			"name": "1:20",
+			"value": 20
+		},
+		{
+			"name": "1:25",
+			"value": 25
+		},
+		{
+			"name": "1:50",
+			"value": 50
+		},
+		{
+			"name": "1:100",
+			"value": 100
+		},
+		{
+			"name": "1:200",
+			"value": 200
+		}
+	],
+    "englishArch": [
+		{
+			"name": "1:1", //"Full Size (1:1)",
+			"value": 1
+		},
+		{
+			"name": "1:2", //"Half Size (1:2)",
+			"value": 2
+		},
+		{
+			"name": "3 in = 1 ft-in", //"3\"=1'-0\"",
+			"precision": "8",
+			"value": 4
+		},
+		{
+			"name": "1.5 in = 1 ft-in", //"1 1/2\"=1'-0\"",
+			"precision": "8",
+			"value": 8
+		},
+		{
+			"name": "1 in = 1 ft-in", //"1\"=1'-0\"",
+			"precision": "8",
+			"value": 12
+		},
+		{
+			"name": "0.75 in = 1 ft-in", //"3/4\"=1'-0\"",
+			"precision": "8",
+			"value": 16
+		},
+		{
+			"name": "0.5 in = 1 ft-in", //"1/2\"=1'-0\"",
+			"precision": "8",
+			"value": 24
+		},
+		{
+			"name": "0.375 in = 1 ft-in", //"3/8\"=1'-0\"",
+			"precision": "8",
+			"value": 32
+		},
+		{
+			"name": "0.25 in = 1 ft-in", //"1/4\"=1'-0\"",
+			"precision": "8",
+			"value": 48
+		},
+		{
+			"name": "0.1875 in = 1 ft-in", //"3/16\"=1'-0\"",
+			"precision": "16",
+			"value": 64
+		},
+		{
+			"name": "0.125 in = 1 ft-in", //"1/8\"=1'-0\"",
+			"precision": "8",
+			"value": 96
+		},
+		{
+			"name": "0.09375 in = 1 ft-in", //"3/32\"=1'-0\"",
+			"precision": "32",
+			"value": 128
+		},
+		{
+			"name": "0.0625 in = 1 ft-in", //"1/16\"=1'-0\"",
+			"precision": "16",
+			"value": 192
+		},
+		{
+			"name": "1:10",
+			"value": 10
+		},
+		{
+			"name": "1:20",
+			"value": 20
+		},
+		{
+			"name": "1:25",
+			"value": 25
+		},
+		{
+			"name": "1:50",
+			"value": 50
+		},
+		{
+			"name": "1:100",
+			"value": 100
+		},
+		{
+			"name": "1:200",
+			"value": 200
+		}
+	],
+	"metric": [
+		{
+			"name": "1:1",
+			"value": 1
+		},
+		{
+			"name": "1:2",
+			"value": 2
+		},
+		{
+			"name": "1:5",
+			"value": 5
+		},
+		{
+			"name": "1:10",
+			"value": 10
+		},
+		{
+			"name": "1:20",
+			"value": 20
+		},
+		{
+			"name": "1:25",
+			"value": 25
+		},
+		{
+			"name": "1:50",
+			"value": 50
+		},
+		{
+			"name": "1:100",
+			"value": 100
+		},
+		{
+			"name": "1:200",
+			"value": 200
+		}
+	],
+
+	"unitConversion": {
+		"cm": {
+		  'mm': 0.1,
+		  'cm': 1,
+		  'm': 100,
+		  'km': 100000,
+		  'mi': 160394,
+		  'in"': 2.54,
+		  'in': 2.54,
+		  'ft': 30.48,
+		  'ft\'': 30.48,
+		  'ft-in': 30.48,
+		  'pt': 0.0352778,
+		  'yd': 91.44,
+		}, 
+		"in": {
+			'mm': 25.4,
+			'cm': 2.54,
+			'm': 0.0254,
+			'km': 0.0000254,
+			'mi': 0.000015782828282828283,
+			'in': 1,
+			'in"': 1,
+			"ft": 0.08333333333333333,
+			'ft\'': 0.08333333333333333,
+			'ft-in': 0.08333333333333333,
+			'pt': 71.99995464569786,
+			'yd': 0.027777777777777776,
+		}
+	},
+	
+	"unitMap" :{
+		"inches": "in",
+		"feet": "ft",
+		"yards": "yd",
+		"miles": "mi",
+		"mms": "mm",
+		"cms": "cm",
+		"meters": "m",
+		"kms": "km",
+		"in": "in",
+		"ft": "ft",
+		"yd": "yd",
+		"mi": "mi",
+		"mm": "mm",
+		"cm": "cm",
+		"m": "m",
+		"km": "km"
+	}
+};
+
+export const measureSystemProxy = new window.Proxy(measureSystemMaps, {
+  get: (obj, measureSystem) => {
+    if (measureSystem in obj) {
+      return obj[measureSystem];
+    }
+    console.warn(`Unknown type ${measureSystem}`);
+    return null;
+  },
+});
+
+export const getAxisScaleFactor = (scaleName, bravaSystem, distance, bravaTargetUnit) => {
+	var unitConversion = measureSystemMaps.unitConversion["cm"];//conversion from cm
+	
+	var scaleInfo = scaleName.split(/[= ]/).filter(a => a !== "");   
+	var targetUnit = scaleInfo[3], sourceUnit = scaleInfo[1],
+		baseUnit = bravaSystem == "metric"? "mm": "in";
+	for(var i = 0, len = 2; i < len; i++)
+	{	var index = i * 2;
+		var value = parseFloat(scaleInfo[index + 0])
+		var unit = scaleInfo[index + 1];
+		if (unit !== baseUnit) {
+			value = value * unitConversion[unit] / unitConversion[baseUnit];
+			if(distance) unit = baseUnit;
+		}	
+		var destUnit = index == 0 ? sourceUnit: (targetUnit == "ft-in"? "in": targetUnit);
+		if (distance && unit !== destUnit)
+			value = value * unitConversion[unit] / unitConversion[destUnit];
+			
+		scaleInfo[index + 0] = value;
+		scaleInfo[index + 1] = unit;		
+	}
+
+	return scaleInfo[2]/scaleInfo[0] * (unitConversion["pt"] / unitConversion[scaleInfo[distance?1:3]]);
+}
+
+export const getScaleFromRatio = (bravaSystem, bravaTargetUnit, ratioText) => {
+	var targetUnit = measureSystemMaps.unitMap[bravaTargetUnit], sourceUnit = bravaSystem == "metric"? "mm": "in",
+		srcScale = `1 ${sourceUnit}`, targetScale = srcScale, ratio = ratioText.split(":");
+	if (ratio.length > 1) {
+		const unitConversion = measureSystemMaps.unitConversion[bravaSystem == "metric"?"cm": "in"];
+		var value = parseFloat(ratio[1]) > parseFloat(ratio[0])?
+			(unitConversion[sourceUnit]/unitConversion[targetUnit])/parseFloat(ratio[1]):
+			(unitConversion[sourceUnit]/unitConversion[targetUnit])*parseFloat(ratio[1]);
+		if (bravaSystem !== "metric" && ["1:1", "1:2"].includes(ratioText)) {
+			targetScale = `1 ${targetUnit}`;	
+			srcScale = `${value} ${sourceUnit}`;
+		} else {
+			if (parseFloat(ratio[0]) > 1) srcScale = `${ratio[0]} ${sourceUnit}`;			
+			targetScale = `${value} ${targetUnit}`;	
+		}		
+	}	
+	return `${srcScale} = ${targetScale}`; 
+}
+
 export const getImageDimensions = (imageSrc) => {
   return new Promise((resolve, reject) => {
     const image = new window.Image();

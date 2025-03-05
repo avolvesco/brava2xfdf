@@ -16,6 +16,9 @@ import {
 import {
   mod,
   lineTypeProxy,
+  measureSystemProxy,
+  getAxisScaleFactor,
+  getScaleFromRatio,
   getImageDimensions,
   rgbToHex,
   setXfdfAttributes,
@@ -229,6 +232,25 @@ const getConvertedPoints = (unConvertedPoints, {
 };
 
 const getConvertedPointsFromNode = (br_node, context) => {
+	
+	const decode = (text) => {
+		text = text.split("");
+		for (var n = [], q = text.length; "\x3d" == text[--q]; );
+		for (var k = 0; k < q; ) {
+			var m = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/".indexOf(text[k++]) << 18;
+			k <= q && (m |= "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/".indexOf(text[k++]) << 12);
+			k <= q && (m |= "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/".indexOf(text[k++]) << 6);
+			k <= q && (m |= "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/".indexOf(text[k++]));
+			n.push(m >>> 16 & 255);
+			n.push(m >>> 8 & 255);
+			n.push(m & 255)
+		}
+		for (; 0 == n[n.length - 1]; )
+			n.pop();
+		//return n
+		return n.length ? (new Float64Array((new Uint8Array(n)).buffer))[0] : 0;
+	}
+
   const br_points = br_node.getElementsByTagName('Point');
 
   const { bravaPage, DriverInfo } = context;
@@ -242,15 +264,23 @@ const getConvertedPointsFromNode = (br_node, context) => {
     const [br_xNode] = br_point.getElementsByTagName('x');
     const [br_yNode] = br_point.getElementsByTagName('y');
 
-    const x = parseFloat(br_xNode.textContent, 10); // - (isCADFile ? left : 0);
-    const y = parseFloat(br_yNode.textContent, 10); // - (isCADFile ? bottom : 0);
+	var encoding = br_point.parentElement.getAttribute("encoding");
+    const x =  encoding!== null? decode(br_xNode.textContent): parseFloat(br_xNode.textContent, 10); // - (isCADFile ? left : 0);
+    const y = encoding !== null? decode(br_yNode.textContent): parseFloat(br_yNode.textContent, 10); // - (isCADFile ? bottom : 0);
 
     unConvertedPoints.push({
       x,
       y,
     });
   });
-  return getConvertedPoints(unConvertedPoints, context);
+  
+  var obj = getConvertedPoints(unConvertedPoints, context);
+  
+  var multiplier = br_node.getElementsByTagName('DLtoXMultiplier');
+  if (multiplier != null && multiplier.length > 0)
+	  obj["dltoXMultiplier"] = multiplier[0].getAttribute("encoding") !== null? decode(multiplier[0].textContent): parseFloat(multiplier[0].textContent, 10);
+  
+  return obj;
 };
 
 const createNodeWithVertices = async (
@@ -1452,6 +1482,372 @@ const createLink = async (context, br_annot) => {
   return xfdf_link;
 };
 
+const getMeasureAttr = (context, br_node) => {
+	const { inXrlDoc } = context;
+	
+	 const categoryGuid = br_node.getAttribute("categoryguid");
+  var cat_node = inXrlDoc.querySelector("MeasureCategories MeasureCategory[guid='"+categoryGuid+"']");
+  return cat_node.attributes;  
+};
+
+const createMeasureCount = async (context, br_node) => {
+  const { pageIndex, outXfdfDoc, inXrlDoc, authorName } = context;
+ 
+  const {
+    color: colorAttr,
+    unit: unitAttr,
+    precision: precisionAttr
+  } = getMeasureAttr(context, br_node);
+  
+  const { points } = getConvertedPointsFromNode(br_node, context);
+
+  const x = points[0].x, y  = points[0].y;
+
+  const xfdf_measure = outXfdfDoc.createElement('text');
+  setXfdfAttributes(
+    {
+      page: pageIndex,
+      rect: `${x - 1},${y - 1},${x + 1},${y + 1}`,
+      //coords,
+      subject: "Note",
+      title: authorName,
+      color: `#${rgbToHex(...colorAttr.value.split('|'))}`,	 
+	  flags: "print,norotate",
+	  icon:"Check",
+	  statemodel:"Review"
+    },
+    br_node.attributes,
+    xfdf_measure,
+    context,
+  );
+  
+  const trnCustomData = outXfdfDoc.createElement('trn-custom-data');
+  trnCustomData.setAttribute("bytes", JSON.stringify({"trn-is-count": "true"}));		
+  xfdf_measure.appendChild(trnCustomData);
+	
+  return xfdf_measure;
+};
+
+const createMeasureData = (outXfdfDoc, distance, dltoXMultiplier, bravaUnit, bravaPrecision, bravaSystem) => {
+  var systemValue = dltoXMultiplier/0.0010000000474974513; //(bravaSystem == "metric"? 0.0010000000474974513: 0.0010000000474974513);
+  const unitMap = measureSystemProxy.unitMap;	
+  const toInches = measureSystemProxy.unitConversion["in"];
+  
+  var precision = bravaPrecision.replace("1", "0").replace("0.", "1");
+  const measureData = outXfdfDoc.createElement('measure');
+  var scaleName = "1 in = 1 in", axisFactor = 0.013888897637795274, systemMap = measureSystemProxy[bravaSystem];
+  var scale = systemMap != null ? systemMap.filter( a => a.value === systemValue): null;
+  if (scale != null && scale.length > 0) {
+	scaleName = scale[0].name;
+	if (scale[0].precision) precision = scale[0].precision;
+	if (scaleName.indexOf(":") > -1) scaleName = getScaleFromRatio(bravaSystem, bravaUnit, scaleName);		
+	axisFactor = getAxisScaleFactor(scaleName, bravaSystem, distance, bravaUnit);
+  }
+  measureData.setAttribute("scale", scaleName);
+
+  const axisData = outXfdfDoc.createElement('axis');
+  axisData.innerHTML = `<numberformat factor="${axisFactor}" unit="" decimal-symbol="." thousands-symbol="," display="D" precision="100" unit-prefix="" unit-suffix="" unit-position="S"/>`; 
+  measureData.appendChild(axisData); 
+  
+  //Determine the number format for the distance/area
+  var defaultNumberFormat = `<numberformat unit="" decimal-symbol="." thousands-symbol="," display="D" precision="100" unit-prefix="" unit-suffix="" unit-position="S"/>`;
+  var numberFormat = "", numberUnit = unitMap[bravaUnit], display = parseInt(precision)%10 == 0? "D": "F";  
+  switch (bravaUnit) {
+	case "feet":
+		if (distance && display === "F")
+			numberFormat = `<numberformat factor="0.08333333333333333" unit="ft'" decimal-symbol="." thousands-symbol="," display="F" precision="${precision}" unit-prefix="" unit-suffix="" unit-position="S"/><numberformat factor="12" unit="in&quot;" decimal-symbol="." thousands-symbol="," display="F" precision="${precision}" unit-prefix="" unit-suffix="" unit-position="S"/>`;
+		else 
+			numberFormat = `<numberformat factor="1" unit="sq ft" decimal-symbol="." thousands-symbol="," display="${display}" precision="${precision}" unit-prefix="" unit-suffix="" unit-position="S"/>`;
+		break;
+	default:
+		var numberFactor = bravaSystem == "metric"? 1: toInches[numberUnit];
+		if (distance)
+			numberFormat = `<numberformat factor="${numberFactor !== undefined? numberFactor: 1}" unit="${numberFactor !== undefined? numberUnit: "in"}" decimal-symbol="." thousands-symbol="," display="D" precision="${precision}" unit-prefix="" unit-suffix="" unit-position="S"/>`;
+		else 		
+			numberFormat = `<numberformat factor="1" unit="sq ${numberUnit}" decimal-symbol="." thousands-symbol="," display="${display}" precision="${precision}" unit-prefix="" unit-suffix="" unit-position="S"/>`;
+		break;
+  };
+  
+  const distanceData = outXfdfDoc.createElement('distance');  
+  distanceData.innerHTML = distance ? numberFormat: defaultNumberFormat; 
+  measureData.appendChild(distanceData); 
+  
+  const areaData = outXfdfDoc.createElement('area');
+  areaData.innerHTML = distance ? defaultNumberFormat: numberFormat; 
+  measureData.appendChild(areaData); 
+  
+  return measureData;
+}
+
+const createMeasurePolygon = async (context, br_node) => {
+  const { pageRotationDegree, pageIndex, outXfdfDoc, inXrlDoc, authorName } = context;
+  const {
+    color: colorAttr,
+    unit: unitAttr,
+    precision: precisionAttr,
+	system: systemAttr
+  } = getMeasureAttr(context, br_node);
+
+  var minX = null, minY = null, maxX = null, maxY = null, vertices = "";
+  const { points, rectPoints, dltoXMultiplier } = getConvertedPointsFromNode(br_node, context);
+
+  const [firstPoint] = points;
+  let verticesContent = '';
+  forEach(points, ({ x, y }) => {
+    verticesContent += `${x},${y};`;
+  });
+ 
+  // remove last semicolon
+  verticesContent = verticesContent.slice(0, -1);
+  const {
+    minX,
+    minY,
+    maxX,
+    maxY,
+  } = rectPoints;
+
+  const xfdf_measure = outXfdfDoc.createElement('polygon');
+  setXfdfAttributes(
+    {
+      page: pageIndex,
+      rect: `${minX},${minY},${maxX},${maxY}`,
+      subject: "Polygon",
+	  IT: "PolygonDimension",
+      title: authorName,
+	  width: "2",
+	  opacity: "0.38",
+	  color: "#000000",
+      "interior-color": `#${rgbToHex(...colorAttr.value.split('|'))}`,
+	  flags: "print"
+    },
+    br_node.attributes,
+    xfdf_measure,
+    context,
+  );
+  var customData = {};
+  if (br_node.tagName.toLowerCase() === "measurerectangle") {
+	  customData["trn-behavior-type"] = "rectangle";
+	  verticesContent = `${minX + 1},${maxY - 1};${maxX + 1},${maxY - 1};${maxX + 1},${minY + 1};${minX + 1},${minY + 1};${minX + 1},${maxY - 1}`;
+  }
+  
+  var ratioX = (maxX - minX) / 2.4, ratioY = (maxY - minY) / 2.4;
+  customData["trn-caption-rotation"] = pageRotationDegree;
+  
+  customData["trn-measurement-caption-options"] = { "isEnabled": true, "captionRect": `${minX + ratioX},${minY + ratioY},${maxX - ratioX},${maxY - ratioY}`, "captionStyle":{"fontFamily":"sans-serif","color":"","staticSize":"0pt","maximumSize":"0pt"}};
+  
+  const trnCustomData = outXfdfDoc.createElement('trn-custom-data');
+  trnCustomData.setAttribute("bytes", JSON.stringify(customData));		
+  xfdf_measure.appendChild(trnCustomData);
+	
+  const xfdf_verticesNode = outXfdfDoc.createElement('vertices');
+  xfdf_verticesNode.appendChild(outXfdfDoc.createTextNode(verticesContent));
+  xfdf_measure.appendChild(xfdf_verticesNode);
+       
+  xfdf_measure.appendChild(createMeasureData(outXfdfDoc, false, dltoXMultiplier, unitAttr.textContent, precisionAttr.textContent, systemAttr.textContent ));
+
+  return xfdf_measure;
+};
+
+const createMeasureEllipse = async (context, br_node) => {
+	
+  const { pageRotationDegree, pageIndex, outXfdfDoc, inXrlDoc, authorName } = context;
+  const {
+	type: typeAttr,
+    color: colorAttr,
+    unit: unitAttr,
+    precision: precisionAttr,
+	system: systemAttr
+  } = getMeasureAttr(context, br_node);
+  var measureType = typeAttr.textContent;
+ 
+  const { points, dltoXMultiplier } = getConvertedPointsFromNode(br_node, context);
+  var centerPt = {x: points[0].x , y: points[0].y};	  
+  
+  //Get the radius of the circle given the center and another point in the circle
+  var radius = Math.sqrt(Math.pow(Math.abs(points[1].x - centerPt.x), 2) + 
+		Math.pow(Math.abs(points[1].y - centerPt.y), 2));
+ 
+  //first point is the center of the circle
+  var minX = centerPt.x - radius, minY = centerPt.y - radius, maxX = centerPt.x  + radius, maxY = centerPt.y + radius;
+  
+  var attributes = {
+      page: pageIndex,
+      rect: `${minX},${minY},${maxX},${maxY}`,
+      subject: measureType === "area"? "Ellipse": "Arc",	
+	  IT: measureType === "area"? "EllipseDimension": "ArcDimension",		  
+      title: authorName,
+	  width: "2",
+	  color: `#${rgbToHex(...colorAttr.value.split('|'))}`,
+      flags: "print"
+  };
+  
+  if (measureType === "area") {
+	attributes["interior-color"]= attributes["color"];
+	attributes["color"] = "#000000";
+	attributes["opacity"]= "0.38";	
+  } 
+  const xfdf_measure = outXfdfDoc.createElement(measureType === "area"? 'circle': 'ink');
+  setXfdfAttributes(
+    attributes,
+    br_node.attributes,
+    xfdf_measure,
+    context,
+  );
+  if (measureType === "area") {
+	  var customData = {};
+	  var ratioX = (maxX - minX) / 2.4, ratioY = (maxY - minY) / 2.4;
+	  customData["trn-caption-rotation"] = pageRotationDegree;
+	  
+	  customData["trn-measurement-caption-options"] = { "isEnabled": true, "captionRect": `${minX + ratioX},${minY + ratioY},${maxX - ratioX},${maxY - ratioY}`, "captionStyle":{"fontFamily":"sans-serif","color":"","staticSize":"0pt","maximumSize":"0pt"}};
+	  
+	  const trnCustomData = outXfdfDoc.createElement('trn-custom-data');
+	  trnCustomData.setAttribute("bytes", JSON.stringify(customData));		
+	  xfdf_measure.appendChild(trnCustomData);
+  } else {
+	  //Get the point of the circle in a certain angle	  
+      const getPoint = (angle) => {
+		  var radAngle = angle * ( Math.PI / 180 ); // Convert from Degrees to Radians    
+		  return {x: centerPt.x + radius * Math.cos(radAngle), y: centerPt.y + radius * Math.sin(radAngle)};
+	  };
+	  var newPoints = []
+	  newPoints.push(getPoint(0.03, centerPt));
+	  newPoints.push(getPoint(229, centerPt));
+	  newPoints.push(getPoint(0.0, centerPt));      
+	  let verticesContent = '';
+	  forEach(newPoints, ({ x, y }) => {
+		verticesContent += `${x},${y};`;
+	  });
+	 
+	  // remove last semicolon
+	  verticesContent = verticesContent.slice(0, -1);
+	
+	  const xfdf_verticesNode = outXfdfDoc.createElement('vertices');
+	  xfdf_verticesNode.appendChild(outXfdfDoc.createTextNode(verticesContent));
+	  xfdf_measure.appendChild(xfdf_verticesNode);
+	 
+  }
+  xfdf_measure.appendChild(createMeasureData(outXfdfDoc, measureType === "length", dltoXMultiplier, unitAttr.textContent, precisionAttr.textContent, systemAttr.textContent));
+
+  return xfdf_measure;
+};
+
+const createMeasurePolyline = async (context, br_node) => {
+  const { pageRotationDegree, pageIndex, outXfdfDoc, inXrlDoc, authorName } = context;
+  const {
+    color: colorAttr,
+    unit: unitAttr,
+    precision: precisionAttr,
+	system: systemAttr
+  } = getMeasureAttr(context, br_node);
+
+  var minX = null, minY = null, maxX = null, maxY = null, vertices = "";
+  const { points, rectPoints, dltoXMultiplier } = getConvertedPointsFromNode(br_node, context);
+
+  const [firstPoint] = points;
+  let verticesContent = '';
+  forEach(points, ({ x, y }) => {
+    verticesContent += `${x},${y};`;
+  });
+ 
+  // remove last semicolon
+  verticesContent = verticesContent.slice(0, -1);
+  const {
+    minX,
+    minY,
+    maxX,
+    maxY,
+  } = rectPoints;
+
+  const xfdf_measure = outXfdfDoc.createElement('polyline');
+  setXfdfAttributes(
+    {
+      page: pageIndex,
+      rect: `${minX},${minY},${maxX},${maxY}`,
+      subject: "Polyline",
+	  IT: "PolyLineDimension",
+	  head: "None",
+	  tail: "None",
+      title: authorName,
+	  width: "2",
+	  "color": `#${rgbToHex(...colorAttr.value.split('|'))}`,
+	  flags: "print"
+    },
+    br_node.attributes,
+    xfdf_measure,
+    context,
+  );
+  var customData = {};
+  if (br_node.tagName.toLowerCase() === "measurerectangle") {
+	  customData["trn-behavior-type"] = "rectangle";
+	  verticesContent = `${minX + 1},${maxY - 1};${maxX + 1},${maxY - 1};${maxX + 1},${minY + 1};${minX + 1},${minY + 1};${minX + 1},${maxY - 1}`;
+  }
+  
+  const xfdf_verticesNode = outXfdfDoc.createElement('vertices');
+  xfdf_verticesNode.appendChild(outXfdfDoc.createTextNode(verticesContent));
+  xfdf_measure.appendChild(xfdf_verticesNode);
+      
+  xfdf_measure.appendChild(createMeasureData(outXfdfDoc, true, dltoXMultiplier, unitAttr.textContent, precisionAttr.textContent, systemAttr.textContent));
+
+  return xfdf_measure;
+};
+
+const createMeasureLine = async (context, br_node) => {
+  const { pageRotationDegree, pageIndex, outXfdfDoc, inXrlDoc, authorName } = context;
+  const {
+    color: colorAttr,
+    unit: unitAttr,
+    precision: precisionAttr,
+	system: systemAttr
+  } = getMeasureAttr(context, br_node);
+
+  var minX = null, minY = null, maxX = null, maxY = null, vertices = "";
+  const { points, rectPoints, dltoXMultiplier } = getConvertedPointsFromNode(br_node, context);
+
+  const [firstPoint] = points;
+  let verticesContent = '';
+  forEach(points, ({ x, y }) => {
+    verticesContent += `${x},${y};`;
+  });
+ 
+  // remove last semicolon
+  verticesContent = verticesContent.slice(0, -1);
+  const {
+    minX,
+    minY,
+    maxX,
+    maxY,
+  } = rectPoints;
+
+  const xfdf_measure = outXfdfDoc.createElement('line');
+  setXfdfAttributes(
+    {
+      page: pageIndex,
+      rect: `${minX},${minY},${maxX},${maxY}`,
+	  start: `${points[0].x},${points[0].y}`,
+      end: `${points[1].x},${points[1].y}`,
+      subject: "Line",
+	  IT: "LineDimension",
+	  head: "OpenArrow",
+	  tail: "OpenArrow",
+      title: authorName,
+	  width: "2",
+	  leaderLength: "10",
+	  leaderExtend:"2",
+	  caption: "yes",
+	  "caption-offset-h": "0",
+	  "color": `#${rgbToHex(...colorAttr.value.split('|'))}`,
+	  flags: "print"
+    },
+    br_node.attributes,
+    xfdf_measure,
+    context,
+  );
+ 
+  xfdf_measure.appendChild(createMeasureData(outXfdfDoc, true, dltoXMultiplier, unitAttr.textContent, precisionAttr.textContent, systemAttr.textContent));
+  
+  return xfdf_measure;
+};
+
 const addBookmark = (bookmarks, pageIndex, br_bookmark) => {
   let title = 'My bookmark';
   const br_title = find(br_bookmark.childNodes, { nodeName: 'Title' });
@@ -1526,7 +1922,20 @@ const processAnnot = (br_annot, context, topContext, bookmarks) => {
     nodePromise = createRedact(context, br_annot);
   } else if (br_annot.nodeName === 'Bookmark') {
     addBookmark(bookmarks, pageIndex, br_annot);
-  } else {
+  } else if (br_annot.nodeName === 'MeasureCount') {
+    nodePromise = createMeasureCount(context, br_annot);
+  } else if (br_annot.nodeName === 'MeasureRectangle' || br_annot.nodeName === 'MeasurePolygon') {
+    nodePromise = createMeasurePolygon(context, br_annot);
+  } else if (br_annot.nodeName === 'MeasureCircle') {
+    nodePromise = createMeasureEllipse(context, br_annot);
+  } else if (br_annot.nodeName === 'MeasurePolyline') {
+    nodePromise = createMeasurePolyline(context, br_annot);
+  } else if (br_annot.nodeName === 'MeasureLine') {
+    nodePromise = createMeasureLine(context, br_annot);
+  } 
+  
+  
+  else {
     console.warn(`Unknown node: ${br_annot.nodeName}. Skipping`);
   }
 
@@ -1702,7 +2111,8 @@ const xrlToXfdf = async (inputXrlStr, pageInfos, extension, freeTextJustificatio
         left, bottom, right, top,
       },
       matrix: [1, 0, 0, 1, 0, 0], // identity matrix
-      pageRotationDegree,
+      pageRotationDegree,	 
+	  pageInfo: pageInfo
     };
 
     forEach(br_authors, (br_author) => {
