@@ -1531,11 +1531,12 @@ const createMeasureCount = async (context, br_node) => {
 const createMeasureData = (outXfdfDoc, distance, dltoXMultiplier, bravaUnit, bravaPrecision, bravaSystem) => {
   var systemValue = dltoXMultiplier/0.0010000000474974513; //(bravaSystem == "metric"? 0.0010000000474974513: 0.0010000000474974513);
   const unitMap = measureSystemProxy.unitMap;	
-  const toInches = measureSystemProxy.unitConversion["in"];
-  
-  var precision = bravaPrecision.replace("1", "0").replace("0.", "1");
-  const measureData = outXfdfDoc.createElement('measure');
+  const toInches = measureSystemProxy.unitConversion["in"];  
   var scaleName = "1 in = 1 in", axisFactor = 0.013888897637795274, systemMap = measureSystemProxy[bravaSystem];
+  var precision = "1000";
+  if (bravaPrecision.indexOf(".") > -1) precision = bravaPrecision.replace("1", "0").replace("0.", "1");
+  
+  const measureData = outXfdfDoc.createElement('measure');
   var scale = systemMap != null ? systemMap.filter( a => a.value === systemValue): null;
   if (scale != null && scale.length > 0) {
 	scaleName = scale[0].name;
