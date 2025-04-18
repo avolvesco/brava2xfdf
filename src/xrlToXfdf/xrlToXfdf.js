@@ -425,14 +425,6 @@ const createLine = async (context, br_line, headType = '') => {
       xfdf_line.setAttribute('tail', lineTypeProxy[arrowType2]);
     }
   }
-        
-  //Consider linestyle attribute of the Brava markup during the conversion
-  var linestyle = br_line.getAttribute("linestyle");
-  if (linestyle == "dot" || linestyle == "dash" || linestyle == "dashdot")
-	  xfdf_line.setAttribute("style", "dash");
-  if (linestyle == "dot") xfdf_line.setAttribute("dashes", "2,2");
-  if (linestyle == "dash") xfdf_line.setAttribute("dashes", "4,4");
-  if (linestyle == "dashdot") xfdf_line.setAttribute("dashes", "4,6,10,6");
 
   return xfdf_line;
 };

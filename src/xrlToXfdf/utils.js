@@ -595,7 +595,16 @@ export const setXfdfAttributes = (extraAttributes, br_attributes, xfdf_node, con
     ...interiorColor,
   }, xfdf_node);
 
-  if (!drawstyleAttr || (drawstyleAttr.value !== 'solid' && drawstyleAttr.value !== 'highlight' && drawstyleAttr.value !== 'hide')) {
+  if (!linestyleAttr || (linestyleAttr.value !== 'solid' )) {
+      //Consider linestyle attribute of the Brava markup during the conversion
+	   if (linestyleAttr.value == "dot" || linestyleAttr.value == "dash" || linestyleAttr.value == "dashdot")
+		  xfdf_node.setAttribute("style", "dash");
+	  if (linestyleAttr.value == "dot") xfdf_node.setAttribute("dashes", "2,2");
+	  if (linestyleAttr.value == "dash") xfdf_node.setAttribute("dashes", "4,4");
+	  if (linestyleAttr.value == "dashdot") xfdf_node.setAttribute("dashes", "4,6,10,6");
+  }
+  
+   if (!drawstyleAttr || (drawstyleAttr.value !== 'solid' && drawstyleAttr.value !== 'highlight' && drawstyleAttr.value !== 'hide')) {
     const dashStyle = getDashStyle(linestyleAttr, drawstyleAttr, width);
 
     setXfdfAttributesBare(
