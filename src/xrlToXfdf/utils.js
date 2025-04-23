@@ -454,9 +454,7 @@ const getLineWidth = (isImage, xfdf_node, linewidthAttr, wvHeight) => {
   let width = 0;
   if (linewidthAttr) {
     const linestyleAttrValue = parseFloat(linewidthAttr.value, 10);
-	if (xfdf_node.nodeName === "polygon") {
-	  width = (linestyleAttrValue * 10 * 0.5).toFixed(1);
-    } else if (isImage) {
+	if (isImage) {
       width = (linestyleAttrValue * 10) / (700 / wvHeight);
     } else {
       width = linestyleAttrValue * (wvHeight / 64.8096192384);
