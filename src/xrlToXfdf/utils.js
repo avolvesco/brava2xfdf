@@ -593,7 +593,7 @@ export const setXfdfAttributes = (extraAttributes, br_attributes, xfdf_node, con
     ...interiorColor,
   }, xfdf_node);
 
-  if (!linestyleAttr || (linestyleAttr.value !== 'solid' )) {
+  if ((xfdf_node.nodeName === "line" || xfdf_node.nodeName === "polyline") && (!linestyleAttr || (linestyleAttr.value !== 'solid' ))) { 
       //Consider linestyle attribute of the Brava markup during the conversion
 	   if (linestyleAttr.value == "dot" || linestyleAttr.value == "dash" || linestyleAttr.value == "dashdot")
 		  xfdf_node.setAttribute("style", "dash");
