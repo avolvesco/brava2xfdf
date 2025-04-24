@@ -712,7 +712,7 @@ const createFreeTextNode = async (context, br_text) => {
     TextColor: `#${rgbToHex(...colorAttr.value.split('|'))}`,
     FontSize: txtMetrics.fontSize.replace("pt", ""), //Use the font size we got from the calculation	 
     width: "0", // border always applied. So, set it to zero by default.
-    rotation: rotationDegree
+    rotation: context.pageInfo.dataType === "stamp"? rotationDegree: context.pageRotationDegree 
 	//rotation: context.pageRotationDegree //Set appropriate rotation in the Freetext element
   };
 
