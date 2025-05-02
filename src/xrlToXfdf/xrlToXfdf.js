@@ -29,6 +29,8 @@ import {
   getRotationRadFromMatrix,
   getNearestRotationDegreeFromRad,
   multiplyMatrices,
+  isPuppeteer,
+  transformTextPoints
 } from './utils';
 
 const getConvertedPoint = ({ x, y }, { pageConversion = { x: 1, y: 1 }, matrix = [] }) => {
@@ -462,7 +464,17 @@ const createFreeTextNode = async (context, br_text) => {
     const br_matrixNode = matrixNodes[0]; // Get the first (and presumably only) Matrix node
     textMatrix = br_matrixNode.textContent.split('|').map((n) => parseFloat(n, 10));
   }
-
+  
+  //Get all the lines in the text annotation
+  var text = "";
+  var elLines = br_text.querySelectorAll("TextLine");
+  for (var idx = 0, len = elLines.length; idx < len; idx++) {
+	if (elLines[idx].innerHTML !== "")
+		text += (text === "" ? "" : '\r\n') + elLines[idx].innerHTML;
+  }	
+					  
+  transformTextPoints(context, br_text, text);
+	
   const { rectPoints, rotationDegree } = getConvertedPointsFromNode(br_text, {
     ...context,
     // This is for grouping
@@ -658,13 +670,6 @@ const createFreeTextNode = async (context, br_text) => {
 		
 	};
 
-	//Get all the lines in the text annotation
-	var text = "";
-	var elLines = br_text.querySelectorAll("TextLine");
-	for (var idx = 0, len = elLines.length; idx < len; idx++) {
-		if (elLines[idx].innerHTML !== "")
-			text += (text === "" ? "" : '\r\n') + elLines[idx].innerHTML;
-	}
 	//Get the font size adjusted to a scale factor
 	var bravaFontSize = Math.floor(parseFloat(fontVal) / 0.0352778 * 8);
 	var txtWidth = size.maxX - size.minX , txtHeight = size.maxY - size.minY;
@@ -704,6 +709,7 @@ const createFreeTextNode = async (context, br_text) => {
 	
 	//END Changed logic for calculating the FreeText font size by using the Canvas measureText method so it can handle any font size from Brava text annotations. 
 
+	
   let copyAttributes = {
     page: pageIndex,
     title: authorName,	
@@ -712,8 +718,7 @@ const createFreeTextNode = async (context, br_text) => {
     TextColor: `#${rgbToHex(...colorAttr.value.split('|'))}`,
     FontSize: txtMetrics.fontSize.replace("pt", ""), //Use the font size we got from the calculation	 
     width: "0", // border always applied. So, set it to zero by default.
-    rotation: context.pageInfo.dataType === "stamp"? rotationDegree: context.pageRotationDegree 
-	//rotation: context.pageRotationDegree //Set appropriate rotation in the Freetext element
+    rotation: context.pageInfo.dataType === "stamp"? rotationDegree: context.pageRotationDegree  //Set appropriate rotation in the Freetext element
   };
 
   if (opaqueAttr.value === 'secondarycolor') {

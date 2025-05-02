@@ -703,26 +703,299 @@ export const changeDegreeRotationDirection = (rotationDegree) => {
   return mod((360 - rotationDegree), 360);
 };
 
-export const multiplyMatrices = (m1 = [], m2 = []) => {
-  // 1 0 0 // a b h // a b h
-  // 0 1 0 // c d v // c d v
-  // 0 0 1 // 0 0 1 // 0 0 1
+export const multiplyMatrices = (m1, m2, m3) => {
 
-  // 11 = a1*a2 + b1*c2
-  // 12 = a1*b2 + b1*d2
-  // 13 = a1*h2 + b1*v2 + h1
-  // 21 = c1*a2 + d1*c2
-  // 22 = c1*b2 + d1*d2
-  // 23 = c1*h2 + d1*v2 + v1
-
-  const [a1 = 1, b1 = 0, c1 = 0, d1 = 1, h1 = 0, v1 = 0] = m1;
-  const [a2 = 1, b2 = 0, c2 = 0, d2 = 1, h2 = 0, v2 = 0] = m2;
-  return [
-    a1 * a2 + b1 * c2,
-    a1 * b2 + b1 * d2,
-    c1 * a2 + d1 * c2,
-    c1 * b2 + d1 * d2,
-    a1 * h2 + b1 * v2 + h1,
-    c1 * h2 + d1 * v2 + v1,
-  ];
+  //brava equivalent
+  //xx = a1, xy = b1, yx = c1, yy = d1, dx = h1, dy = v1 
+  var args = [];
+  if (m1 !== undefined) args.push(m1);
+  if (m2 !== undefined) args.push(m2);
+  if (m3 !== undefined) args.push(m3)
+	  ;
+  const a0 = args[0][0], b0 = args[0][1], c0 = args[0][2], d0 = args[0][3], h0 = args[0][4], v0 = args[0][5];
+  var m = [a0, b0, c0, d0, h0, v0];
+  
+  for (var l = 1, len = args.length; l < len; l++) {
+	const a1 = m[0], b1 = m[1], c1 = m[2], d1 = m[3], h1 = m[4], v1 = m[5];
+	const a2 = args[l][0], b2 = args[l][1], c2 = args[l][2], d2 = args[l][3], h2 = args[l][4], v2 = args[l][5];
+	
+	m[0] = a1 * a2 + b1 * c2;
+	m[1] = a1 * b2 + b1 * d2;
+	m[2] = c1 * a2 + d1 * c2;
+	m[3] = c1 * b2 + d1 * d2;
+	m[4] = a1 * h2 + b2 * v2 + h1;
+	m[5] = c1 * h2 + d1 * v2 + v1;
+  } 
+  return m;
 };
+
+
+const translate = (x, y) => {
+	//const a1 =  m[0], b1 =  m[1], c1 =  m[2], d1 =  m[3];	
+	//return [a1, b1, c1, d1, x, y];
+	return [1, 0, 0, 1, x, y];
+};
+
+const rotate = (angle) => {
+	var a = Math.cos(angle);
+	var b = Math.sin(angle);
+	var	h1 = 0;
+	var v1 = 0;
+	
+	return [ a, -angle, angle, a, h1, v1];
+};
+
+const scale = (scaleX, scaleY) => {	
+	return [scaleX, 0, 0, scaleY, 0, 0];
+};
+
+
+const sandwich = (b, m, l) => {
+	return multiplyMatrices(translate(m, l), b, translate(-m, -l));
+}
+	
+const rotateAt = (angle, center) => {
+	return sandwich(rotate(angle), center.x, center.y)
+};
+
+const scaleAt = (b, m, l, h) => {
+	
+	return sandwich(scale(b, m), l, h);
+	
+};
+
+const multiplyRectangle = (m, rect) => {
+	
+	var h = multiplyPoint(m, rect.x, rect.y)
+	  , g = multiplyPoint(m, rect.x, rect.y + rect.height)
+	  , a = multiplyPoint(m, rect.x + rect.width, rect.y)
+	  , f = multiplyPoint(m, rect.x + rect.width, rect.y + rect.height)
+	  , minX = Math.min(h.x, g.x, a.x, f.x)
+	  , minY = Math.min(h.y, g.y, a.y, f.y)
+	  , maxX = Math.max(h.x, g.x, a.x, f.x)
+	  , maxY = Math.max(h.y, g.y, a.y, f.y);
+	  
+	return  {
+		x: minX,
+		y: minY,
+		width: maxX - minX,
+		height: maxY - minY
+	}
+};
+
+const multiplyPoint = (m, x, y) => {
+	const a1 =  m[0], b1 =  m[1], c1 =  m[2], d1 =  m[3], h1 = m[4], v1 = m[5];	
+	
+	return {
+		x: a1 * x + b1 * y + h1,
+		y: c1* x + d1 * y + v1
+	};
+};
+
+const getDistance = (pt1, pt2) => {
+	    return Math.sqrt(Math.pow(Math.abs(pt2.x - pt1.x), 2) + Math.pow(Math.abs(pt2.y - pt1.y), 2))
+                    
+};
+
+const createSVGNode = (nodeType, attr) => {
+	const namespace = "http://www.w3.org/2000/svg";
+	var node = document.createElementNS(namespace, nodeType);
+	if (nodeType == "svg")
+		node.setAttribute("xmlns", namespace); 
+	
+	if (attr) {
+		for (var name in attr) {
+			node.setAttribute(name, attr[name]); 
+		}
+	}	 
+	
+	if (nodeType == "svg")
+		document.body.appendChild(node);
+	return node;
+}
+
+export const isPuppeteer = () => {
+	return navigator.userAgent.indexOf("HeadlessChrome") > -1;
+}	
+
+export const transformTextPoints = (context, br_text, text) => {
+    const { 
+		bravaHeight,
+		bravaWidth,
+		pageRotationDegree,
+		matrix,  
+	} = context;
+	
+	const {
+		font: fontAttr,
+		fontsize: fontsizeAttr,
+		opaque: opaqueAttr,
+	} = br_text.attributes;
+  
+	const pointNodes = br_text.getElementsByTagName('Point');
+	var bravaPoints = [];
+	for(var i = 0, len = pointNodes.length; i < len; i++)
+	{
+		var n = pointNodes[i], xEl = n.getElementsByTagName('x')[0], yEl =  n.getElementsByTagName('y')[0];
+		var x = parseFloat(xEl.textContent, 10), 
+		y = parseFloat(n.getElementsByTagName('y')[0].textContent, 10);
+		if (y > bravaHeight) context.txtTranslateY = y - bravaHeight;		
+		bravaPoints.push({ x: x, y: y});
+	}
+	var width = getDistance(bravaPoints[0], bravaPoints[1]);
+	var	height = getDistance(bravaPoints[1], bravaPoints[2]);
+	
+	if (context.txtTranslateY === undefined) return;
+	
+	let fontFace = fontAttr.value.replace(/\s+/g, "");
+	var isBold = br_text.getAttribute("bold") === "true", isItalic = br_text.getAttribute("italic") === "true", isUnderline = br_text.getAttribute("underline") === "true";
+ 
+	const defaultFontSize = isPuppeteer()? 12.38593839: 13, fontMultiplier = bravaHeight * 0.1, strokeMultiplier = 1 / 60 * bravaHeight;
+	var bravaFontSize = parseFloat(fontsizeAttr.value) * fontMultiplier;
+	const svgNode = createSVGNode("svg", {"width": bravaWidth, "height": bravaHeight});
+	
+	const svgGrpNode = createSVGNode("g");
+	svgNode.appendChild(svgGrpNode);
+	
+	const svgRectNode = createSVGNode("rect", {
+		"fill":"rgb(255, 255, 255)", "fill-opacity":"1", "stroke":"rgb(255, 0, 0)", "stroke-opacity":"1", "stroke-width":"1", "stroke-linecap":"butt", 
+		"stroke-linejoin":"miter", "stroke-miterlimit":"4",  "ry":"0", "rx":"0", "fill-rule":"evenodd", "stroke-dasharray":"none",
+		 "dojoGfxStrokeStyle":"solid", "vector-effect":"non-scaling-stroke"
+	});	
+	svgGrpNode.appendChild(svgRectNode);
+	
+	const svgTextNode = createSVGNode("text", {
+		"fill":"rgb(255, 0, 0)", "fill-opacity":"1", "stroke":"none", "stroke-opacity":"0", "stroke-width":"1", "stroke-linecap":"butt", "stroke-linejoin":"miter", 
+		"stroke-miterlimit":"4" ,"x":"0", "y":"0", "text-anchor":"start", "text-decoration": (isUnderline? "underline": "none"),
+		"rotate":"0", "kerning":"auto", "text-rendering":"auto", "fill-rule":"evenodd", "font-style": (isItalic ? "italic":"none"),
+		"font-variant":"normal", "font-weight": (isBold? "bold":"normal"),  "font-size": defaultFontSize, "font-family": fontFace, "style":"white-space: pre;"
+	});	
+	svgTextNode.textContent = text;
+	svgNode.appendChild(svgTextNode);
+	
+	//Determine the group transformation	
+	var angle = Math.atan2(bravaPoints[1].y - bravaPoints[0].y, bravaPoints[1].x - bravaPoints[0].x)
+	  , center = {
+			x: (bravaPoints[0].x + bravaPoints[1].x) / 2,
+			y: (bravaPoints[0].y + bravaPoints[1].y) / 2
+		};
+	
+	var ptx =  bravaPoints[0].x;
+	var pty =  bravaPoints[0].y;
+	
+	var mtx = rotateAt(-angle, center);
+	var c = multiplyPoint(mtx, ptx, pty);
+	mtx = rotateAt(angle, center);
+	var tranformMatrix = multiplyMatrices(mtx, translate(ptx, pty));
+	
+	svgGrpNode.setAttribute("transform", "matrix(" + tranformMatrix[0].toFixed(8) + "," + tranformMatrix[1].toFixed(8) + "," + 
+		tranformMatrix[2].toFixed(8) + "," + tranformMatrix[3].toFixed(8) + "," + tranformMatrix[4].toFixed(8) + "," + tranformMatrix[5].toFixed(8) + ")")
+	
+	//Calculate rect size	
+	let canvas = document.createElement('canvas');
+	let ctx = canvas.getContext('2d');
+	ctx.textBaseline = "top";
+	ctx.textAlign = "left";
+    ctx.font = bravaFontSize + "px '" + fontAttr.value + "'";
+	let metrics = ctx.measureText("M");
+    let charWidth = metrics.width;
+	var n = 0.25 * charWidth;
+	var m = 0.1 * charWidth;
+	
+	//console.log("transformTextPoints origbbox - charWidth:"+ charWidth + " width:"+ width + " height:"+ height + " ctx.font:"+ ctx.font + " " + metrics.width + " " + navigator.userAgent);
+	
+	svgRectNode.setAttribute("x", -n - m);
+	svgRectNode.setAttribute("y",  -m - height - n);
+	svgRectNode.setAttribute("width", 2 * n + width + 4 * m);
+	svgRectNode.setAttribute("height", 2 * m + height + m);
+	
+	//Get the bounding rect of the Text
+	var origbbox = svgTextNode.getBBox();
+	var bboxWidth = origbbox.width,
+		bboxHeight = origbbox.height;
+	//console.log("transformTextPoints origbbox - svgNode:"+ svgNode.outerHTML);
+	//console.log("transformTextPoints origbbox - text:"+ text + " width:" + bboxWidth + " height: " + bboxHeight + " x:" + origbbox.x + " y:"+ origbbox.y);
+	
+	var a = { x: 0, y: 0 };
+	var e = {
+		ascentToSize: (a.y - origbbox.y) / defaultFontSize,
+		descentToSize: (origbbox.y + bboxHeight - a.y) / defaultFontSize,
+		widthToSize: bboxWidth / defaultFontSize,
+		heightToSize: bboxHeight / defaultFontSize
+	}	
+    var newHeight = e.heightToSize * bravaFontSize,
+	bbox1 = {
+		x: a.x,
+		y: a.y - newHeight + e.descentToSize * bravaFontSize,
+		width: e.widthToSize * bravaFontSize,
+		height: newHeight
+	};
+	
+	svgTextNode.setAttribute( "font-size", bravaFontSize - (isPuppeteer()?  bravaFontSize * 0.56: 0));
+	var bbox = svgTextNode.getBBox();
+	
+	//console.log("transformTextPoints bbox1 - text:"+ text + " width:" + bbox1.width + " height: " + bbox1.height + " x:" + bbox1.x + " y:"+ bbox1.y);
+	
+	var mtx2 = multiplyMatrices(scaleAt(1, -1, a.x, a.y), translate(0, bbox1.height));
+	var rectMtx = multiplyRectangle(mtx2, bbox1);
+	
+	//Transform the final points
+	var points = [{
+			x: 0,
+			y: 0
+		}, {
+			x: bbox1.width,
+			y: 0
+		}, {
+			x: bbox1.width,
+			y: bbox1.height
+		}, {
+			x: 0,
+			y: bbox1.height
+	}];	
+	var minX = null, minY = null, maxX = null, maxY = null;
+	for(var i = 0, len = pointNodes.length; i < len; i++)
+	{
+		var n = pointNodes[i];
+		var xEl = n.getElementsByTagName('x')[0];
+		var yEl = n.getElementsByTagName('y')[0];
+		
+		var newPoint = multiplyPoint(tranformMatrix, points[i].x, points[i].y);	
+		points[i].x = newPoint.x;	
+		points[i].y = newPoint.y - (context.txtTranslateY ? context.txtTranslateY: 0);	
+		if (minX == null || minX > points[i].x) minX = points[i].x;
+		if (minY == null || minY > points[i].y) minY = points[i].y;
+		if (maxX == null || maxX < points[i].x) maxX = points[i].x;
+		if (maxY == null || maxX < points[i].y) maxY = points[i].y;
+	}
+	var newWidth = getDistance(points[0], points[1]);
+	newHeight = getDistance(points[1], points[2]);
+	var deltaX = (width - newWidth) / 2, deltaY =  (height - newHeight) / 2;
+	
+	console.log("text:"+ text +" deltaX: "+ deltaX + " deltaY:"+ deltaY +" font orig:" + origbbox.width +", "+ origbbox.height + " font width new:"+ bbox.width +", "+ bbox.height);
+	console.log(" width: "+ width+" height: "+ height +" newWidth:"+ newWidth +" newHeight: "+ newHeight);
+	points[0].x =  minX - deltaX;
+	points[0].y =  minY - deltaY;		
+	points[1].x =  maxX + deltaX;
+	points[1].y =  minY - deltaY;		
+	points[2].x =  maxX + deltaX;
+	points[2].y =  maxY + deltaY;					
+	points[3].x =  minX - deltaX;			
+	points[3].y =  maxY + deltaY;			
+	
+	//console.log("transformTextPoints - text:"+ text)	
+	for(var i = 0, len = pointNodes.length; i < len; i++)
+	{
+		var n = pointNodes[i];
+		var xEl = n.getElementsByTagName('x')[0];
+		var yEl = n.getElementsByTagName('y')[0];
+		
+		xEl.textContent = points[i].x;
+		yEl.textContent = points[i].y; 	
+		//console.log("transformTextPoints - text: '"+ text +"' " + points[i].x + ", "+ points[i].y);
+	
+	}
+
+	svgNode.ownerDocument.body.removeChild(svgNode);	
+	
+}
