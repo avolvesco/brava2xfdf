@@ -437,6 +437,7 @@ const createFreeTextNode = async (context, br_text) => {
     pageConversion,
     outXfdfDoc,
     authorName,
+	bravaWidth,
     bravaHeight,
     isImage,
     wvHeight,
@@ -473,21 +474,44 @@ const createFreeTextNode = async (context, br_text) => {
 		text += (text === "" ? "" : '\r\n') + elLines[idx].innerHTML;
   }	
 					  
-  transformTextPoints(context, br_text, text);
+  //transformTextPoints(context, br_text, text);
 	
-  const { rectPoints, rotationDegree } = getConvertedPointsFromNode(br_text, {
+  var { rectPoints, rotationDegree } = getConvertedPointsFromNode(br_text, {
     ...context,
     // This is for grouping
     matrix: multiplyMatrices(matrix, textMatrix),
     isText: true,
   });
-
+  
   let {
     minX,
     minY,
     maxX,
     maxY,
   } = rectPoints;
+  
+  if (rectPoints.minX > context.pageInfo.width || rectPoints.maxX > context.pageInfo.width ||
+	rectPoints.minY > context.pageInfo.height || rectPoints.maxY > context.pageInfo.height ||
+	context.txtTranslateY !== undefined
+  ) {
+
+    console.log("freetext rectPoints:" + minX +", "+minY+","+maxX+","+maxY +" width: "+ context.pageInfo.width +" height:"+ context.pageInfo.height);
+ 	transformTextPoints(context, br_text, text);
+	
+	rectPoints = getConvertedPointsFromNode(br_text, {
+		...context,
+		// This is for grouping
+		matrix: multiplyMatrices(matrix, textMatrix),
+		isText: true,
+	  }).rectPoints;
+	  	 
+	minX = rectPoints.minX;
+	minY = rectPoints.minY;
+	maxX = rectPoints.maxX;
+	maxY = rectPoints.maxY;
+	 
+  }
+
 
   const boundingBoxHeight = maxY - minY;
   const boundingBoxWidth = maxX - minX;

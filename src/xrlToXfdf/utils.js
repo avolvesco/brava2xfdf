@@ -703,7 +703,7 @@ export const changeDegreeRotationDirection = (rotationDegree) => {
   return mod((360 - rotationDegree), 360);
 };
 
-export const multiplyMatrices = (m1, m2, m3) => {
+export const multiplyMatrices = (m1, m2, m3, m4) => {
 
   //brava equivalent
   //xx = a1, xy = b1, yx = c1, yy = d1, dx = h1, dy = v1 
@@ -711,6 +711,7 @@ export const multiplyMatrices = (m1, m2, m3) => {
   if (m1 !== undefined) args.push(m1);
   if (m2 !== undefined) args.push(m2);
   if (m3 !== undefined) args.push(m3)
+  if (m4 !== undefined) args.push(m4)
 	  ;
   const a0 = args[0][0], b0 = args[0][1], c0 = args[0][2], d0 = args[0][3], h0 = args[0][4], v0 = args[0][5];
   var m = [a0, b0, c0, d0, h0, v0];
@@ -814,9 +815,17 @@ const createSVGNode = (nodeType, attr) => {
 	return node;
 }
 
+
+const getTransformFromMatrix = (tranformMatrix) => {
+
+	return "matrix(" + tranformMatrix[0].toFixed(8) + "," + tranformMatrix[1].toFixed(8) + "," + 
+		tranformMatrix[2].toFixed(8) + "," + tranformMatrix[3].toFixed(8) + "," + tranformMatrix[4].toFixed(8) + "," + tranformMatrix[5].toFixed(8) + ")";
+}
+	
 export const isPuppeteer = () => {
 	return navigator.userAgent.indexOf("HeadlessChrome") > -1;
 }	
+
 
 export const transformTextPoints = (context, br_text, text) => {
     const { 
@@ -846,16 +855,26 @@ export const transformTextPoints = (context, br_text, text) => {
 	var	height = getDistance(bravaPoints[1], bravaPoints[2]);
 	
 	if (context.txtTranslateY === undefined) return;
+		
+	var naturalPageHeight = 1440;
+	var naturalPageWidth = naturalPageHeight * bravaWidth / bravaHeight;
 	
 	let fontFace = fontAttr.value.replace(/\s+/g, "");
 	var isBold = br_text.getAttribute("bold") === "true", isItalic = br_text.getAttribute("italic") === "true", isUnderline = br_text.getAttribute("underline") === "true";
  
 	const defaultFontSize = isPuppeteer()? 12.38593839: 13, fontMultiplier = bravaHeight * 0.1, strokeMultiplier = 1 / 60 * bravaHeight;
 	var bravaFontSize = parseFloat(fontsizeAttr.value) * fontMultiplier;
-	const svgNode = createSVGNode("svg", {"width": bravaWidth, "height": bravaHeight});
 	
-	const svgGrpNode = createSVGNode("g");
-	svgNode.appendChild(svgGrpNode);
+	const svgNode = createSVGNode("svg", {"width": bravaWidth, "height": bravaHeight});
+		
+	var pageMtx = multiplyMatrices(scale(naturalPageWidth / bravaWidth, naturalPageHeight / bravaHeight), translate(0, bravaHeight), scale(1, -1), translate(0, 0));
+	var svgFirstGrpNode = createSVGNode("g", {
+		"transform": getTransformFromMatrix(pageMtx)
+	});
+	svgNode.appendChild(svgFirstGrpNode);
+	
+	var svgGrpNode = createSVGNode("g");
+	svgFirstGrpNode.appendChild(svgGrpNode);
 	
 	const svgRectNode = createSVGNode("rect", {
 		"fill":"rgb(255, 255, 255)", "fill-opacity":"1", "stroke":"rgb(255, 0, 0)", "stroke-opacity":"1", "stroke-width":"1", "stroke-linecap":"butt", 
@@ -864,16 +883,7 @@ export const transformTextPoints = (context, br_text, text) => {
 	});	
 	svgGrpNode.appendChild(svgRectNode);
 	
-	const svgTextNode = createSVGNode("text", {
-		"fill":"rgb(255, 0, 0)", "fill-opacity":"1", "stroke":"none", "stroke-opacity":"0", "stroke-width":"1", "stroke-linecap":"butt", "stroke-linejoin":"miter", 
-		"stroke-miterlimit":"4" ,"x":"0", "y":"0", "text-anchor":"start", "text-decoration": (isUnderline? "underline": "none"),
-		"rotate":"0", "kerning":"auto", "text-rendering":"auto", "fill-rule":"evenodd", "font-style": (isItalic ? "italic":"none"),
-		"font-variant":"normal", "font-weight": (isBold? "bold":"normal"),  "font-size": defaultFontSize, "font-family": fontFace, "style":"white-space: pre;"
-	});	
-	svgTextNode.textContent = text;
-	svgNode.appendChild(svgTextNode);
-	
-	//Determine the group transformation	
+	//Determine the text group transformation	
 	var angle = Math.atan2(bravaPoints[1].y - bravaPoints[0].y, bravaPoints[1].x - bravaPoints[0].x)
 	  , center = {
 			x: (bravaPoints[0].x + bravaPoints[1].x) / 2,
@@ -886,104 +896,226 @@ export const transformTextPoints = (context, br_text, text) => {
 	var mtx = rotateAt(-angle, center);
 	var c = multiplyPoint(mtx, ptx, pty);
 	mtx = rotateAt(angle, center);
-	var tranformMatrix = multiplyMatrices(mtx, translate(ptx, pty));
+	var groupMatrix = multiplyMatrices(mtx, translate(ptx, pty));
 	
-	svgGrpNode.setAttribute("transform", "matrix(" + tranformMatrix[0].toFixed(8) + "," + tranformMatrix[1].toFixed(8) + "," + 
-		tranformMatrix[2].toFixed(8) + "," + tranformMatrix[3].toFixed(8) + "," + tranformMatrix[4].toFixed(8) + "," + tranformMatrix[5].toFixed(8) + ")")
+	svgGrpNode.setAttribute("transform", getTransformFromMatrix(groupMatrix));
 	
-	//Calculate rect size	
+	//Calculate rect size of the text		
 	let canvas = document.createElement('canvas');
 	let ctx = canvas.getContext('2d');
 	ctx.textBaseline = "top";
 	ctx.textAlign = "left";
-    ctx.font = bravaFontSize + "px '" + fontAttr.value + "'";
-	let metrics = ctx.measureText("M");
-    let charWidth = metrics.width;
-	var n = 0.25 * charWidth;
+    ctx.font = bravaFontSize + "px '" + fontAttr.value + "'";	
+	let charWidth = ctx.measureText("M").width;
+    var n = 0.25 * charWidth;
 	var m = 0.1 * charWidth;
+	var lineWidth = width * (24 / (0.9 * bravaFontSize));
+	var lines = [];
 	
-	//console.log("transformTextPoints origbbox - charWidth:"+ charWidth + " width:"+ width + " height:"+ height + " ctx.font:"+ ctx.font + " " + metrics.width + " " + navigator.userAgent);
+	const br_textLines = br_text.getElementsByTagName('TextLine');
+	let textContent = '';
+    for(var i = 0, len = br_textLines.length; i < len; i++)  {
+		lines.push(br_textLines[i].textContent);
+    };	
 	
-	svgRectNode.setAttribute("x", -n - m);
-	svgRectNode.setAttribute("y",  -m - height - n);
-	svgRectNode.setAttribute("width", 2 * n + width + 4 * m);
-	svgRectNode.setAttribute("height", 2 * m + height + m);
-	
-	//Get the bounding rect of the Text
-	var origbbox = svgTextNode.getBBox();
-	var bboxWidth = origbbox.width,
-		bboxHeight = origbbox.height;
-	//console.log("transformTextPoints origbbox - svgNode:"+ svgNode.outerHTML);
-	//console.log("transformTextPoints origbbox - text:"+ text + " width:" + bboxWidth + " height: " + bboxHeight + " x:" + origbbox.x + " y:"+ origbbox.y);
-	
-	var a = { x: 0, y: 0 };
-	var e = {
-		ascentToSize: (a.y - origbbox.y) / defaultFontSize,
-		descentToSize: (origbbox.y + bboxHeight - a.y) / defaultFontSize,
-		widthToSize: bboxWidth / defaultFontSize,
-		heightToSize: bboxHeight / defaultFontSize
+	const getBoundingBox = (origbbox, bravaFontSize, posY) => {
+		var bboxWidth = origbbox.width,
+			bboxHeight = origbbox.height;
+		const defaultFontSize = 13;
+		
+		var origPt = { x:0, y:0 };
+		var e = {
+			ascentToSize: (origPt.y - origbbox.y) / defaultFontSize,
+			descentToSize: (origbbox.y + bboxHeight - origPt.y) / defaultFontSize,
+			widthToSize: bboxWidth / defaultFontSize,
+			heightToSize: bboxHeight / defaultFontSize
+		}
+
+		var newHeight = e.heightToSize * bravaFontSize;
+		return {
+			x: origPt.x,
+			y: posY - newHeight + e.descentToSize * bravaFontSize,
+			width: e.widthToSize * bravaFontSize,
+			height: newHeight
+		};
+		
 	}	
-    var newHeight = e.heightToSize * bravaFontSize,
-	bbox1 = {
-		x: a.x,
-		y: a.y - newHeight + e.descentToSize * bravaFontSize,
-		width: e.widthToSize * bravaFontSize,
-		height: newHeight
+  
+	//Create a text element for the line of text using the default font size
+	const createTextNode = (parentNode, line, posY) => {
+		var svgTxtNode = createSVGNode("text", {
+			"fill":"rgb(255, 0, 0)", "fill-opacity":"1", "stroke":"none", "stroke-opacity":"0", "stroke-width":"1", "stroke-linecap":"butt", "stroke-linejoin":"miter", 
+			"stroke-miterlimit":"4" ,"x":"0", "y": "0", "text-anchor":"start", "text-decoration": (isUnderline? "underline": "none"),
+			"rotate":"0", "kerning":"auto", "text-rendering":"auto", "fill-rule":"evenodd", "font-style": (isItalic ? "italic":"none"),
+			"font-variant":"normal", "font-weight": (isBold? "bold":"normal"),  "font-size": defaultFontSize, "font-family": fontFace
+		});
+		svgTxtNode.textContent = line;			
+		parentNode.appendChild(svgTxtNode);
+
+		var bounds = getBoundingBox (svgTxtNode.getBBox(), bravaFontSize, posY);		
+		var mtxTransform = multiplyMatrices(scaleAt(1, -1, 0, posY), translate(0, bounds.height));
+		
+		svgTxtNode.setAttribute("y", posY);		
+		svgTxtNode.setAttribute("transform",  getTransformFromMatrix( mtxTransform));
+		svgTxtNode.setAttribute( "font-size", bravaFontSize - (isPuppeteer()?  bravaFontSize * 0.56: 0));
+		
+		console.log("checking bounds of text line " + svgTxtNode.textContent);
+		return { node: svgTxtNode, 
+			bbox: {x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height },
+			transform: mtxTransform		
+		};
 	};
 	
-	svgTextNode.setAttribute( "font-size", bravaFontSize - (isPuppeteer()?  bravaFontSize * 0.56: 0));
-	var bbox = svgTextNode.getBBox();
-	
-	//console.log("transformTextPoints bbox1 - text:"+ text + " width:" + bbox1.width + " height: " + bbox1.height + " x:" + bbox1.x + " y:"+ bbox1.y);
-	
-	var mtx2 = multiplyMatrices(scaleAt(1, -1, a.x, a.y), translate(0, bbox1.height));
-	var rectMtx = multiplyRectangle(mtx2, bbox1);
-	
-	//Transform the final points
-	var points = [{
-			x: 0,
-			y: 0
-		}, {
-			x: bbox1.width,
-			y: 0
-		}, {
-			x: bbox1.width,
-			y: bbox1.height
-		}, {
-			x: 0,
-			y: bbox1.height
-	}];	
-	var minX = null, minY = null, maxX = null, maxY = null;
-	for(var i = 0, len = pointNodes.length; i < len; i++)
-	{
-		var n = pointNodes[i];
-		var xEl = n.getElementsByTagName('x')[0];
-		var yEl = n.getElementsByTagName('y')[0];
+	//Calculate the new bounding box of the text group after adding the lineShape node
+	const calculateTextGroupRect = (lineShape, origBox) => {
+		var newBox = origBox == null? null: {
+			x: origBox.x,
+			y: origBox.y,
+			endX: origBox.endX,
+			endY: origBox.endY
+		};
 		
-		var newPoint = multiplyPoint(tranformMatrix, points[i].x, points[i].y);	
-		points[i].x = newPoint.x;	
-		points[i].y = newPoint.y - (context.txtTranslateY ? context.txtTranslateY: 0);	
-		if (minX == null || minX > points[i].x) minX = points[i].x;
-		if (minY == null || minY > points[i].y) minY = points[i].y;
-		if (maxX == null || maxX < points[i].x) maxX = points[i].x;
-		if (maxY == null || maxX < points[i].y) maxY = points[i].y;
+		var svgTxtNode = lineShape.node;
+		var newRect = multiplyRectangle(lineShape.transform, lineShape.bbox);
+		if (newBox === null)
+			newBox = {
+				x: newRect.x,
+				y: newRect.y,
+				endX: newRect.x + newRect.width,
+				endY: newRect.y + newRect.height
+			};
+		else {
+			newBox.x = Math.min(newBox.x, newRect.x),
+			newBox.y = Math.min(newBox.y, newRect.y),
+			newBox.endX = Math.max(newBox.endX, newRect.x + newRect.width),
+			newBox.endY = Math.max(newBox.endY, newRect.y + newRect.height); 
+			
+		}
+		
+		if (newBox !== null) {
+			newBox.width = newBox.endX - newBox.x;
+			newBox.height = newBox.endY - newBox.y;
+		}
+		
+		return newBox;
 	}
-	var newWidth = getDistance(points[0], points[1]);
-	newHeight = getDistance(points[1], points[2]);
-	var deltaX = (width - newWidth) / 2, deltaY =  (height - newHeight) / 2;
 	
-	console.log("text:"+ text +" deltaX: "+ deltaX + " deltaY:"+ deltaY +" font orig:" + origbbox.width +", "+ origbbox.height + " font width new:"+ bbox.width +", "+ bbox.height);
-	console.log(" width: "+ width+" height: "+ height +" newWidth:"+ newWidth +" newHeight: "+ newHeight);
-	points[0].x =  minX - deltaX;
-	points[0].y =  minY - deltaY;		
-	points[1].x =  maxX + deltaX;
-	points[1].y =  minY - deltaY;		
-	points[2].x =  maxX + deltaX;
-	points[2].y =  maxY + deltaY;					
-	points[3].x =  minX - deltaX;			
-	points[3].y =  maxY + deltaY;			
+	var transformRect = (bbox, mtx) => {
+		var points = [{
+			x: 0,
+			y: 0
+		}, {
+			x: bbox.width,
+			y: 0
+		}, {
+			x: bbox.width,
+			y: bbox.height
+		}, {
+			x: 0,
+			y: bbox.height
+		}];
+				
+		var minX = null, minY = null, maxX = null, maxY = null;
+		for(var i = 0, len = points.length; i < len; i++)
+		{
+			//var newPoint = multiplyPoint(rectMtx, points[i].x, points[i].y);	
+			var newPoint = multiplyPoint(mtx, points[i].x, points[i].y);	
+			points[i].x = newPoint.x;	
+			points[i].y = newPoint.y;// - (context.txtTranslateY ? context.txtTranslateY: 0);	
+			if (minX == null || minX > points[i].x) minX = points[i].x;
+			if (minY == null || minY > points[i].y) minY = points[i].y;
+			if (maxX == null || maxX < points[i].x) maxX = points[i].x;
+			if (maxY == null || maxX < points[i].y) maxY = points[i].y;
+		}
+		
 	
-	//console.log("transformTextPoints - text:"+ text)	
+		return { points: points, minX: minX, minY: minY, maxX: maxX, maxY: maxY };
+	}
+	
+	//Determine the flow of text for each line and the bounding box of the entire text using logic in Brava HTML Viewer 
+	var flowLines = [], lineShapes = [], k = false, lineHeight = 0, linePosY = 0, firstLineY = 0, origBox = null;
+	ctx.font = "24px '" + fontAttr.value + "'";	
+	for (var len = lines.length; len > 0; len--){
+		var line = "";
+		var words = lines.shift().split(/(\s+)/);
+		if (1 === words.length && "" === words[0] && true === k)
+			k = false;
+		else {
+			k = false;
+			for (var c = words.length; c > 0;  c--) {
+				var t = words.shift();
+				if (ctx.measureText(line + t).width <= lineWidth)
+				{
+					line += t;
+					if ("" === line && "" === flowLines[flowLines.length - 1]) k = true;
+				}else if ("" !== line) {
+					//Create a new text element for the line and append it to the SVG Node. Then get the appropriate bounds of the text element
+					var shape = createTextNode(svgNode, line, firstLineY - linePosY);	
+					if (lineHeight === 0) lineHeight = shape.bbox.height;				
+					
+					origBox = calculateTextGroupRect(shape, origBox);
+					lineShapes.push(shape);
+					linePosY += 0.9 * lineHeight;
+		
+					flowLines.push(line);
+					line = t + " ";
+				};
+			}
+			if ("" !== line) {
+				//Create a new text element for the line and append it to the SVG Node. Then get the appropriate bounds of the text element
+				var shape = createTextNode(svgNode, line, firstLineY - linePosY);	
+				if (lineHeight === 0) lineHeight = shape.bbox.height;
+				origBox = calculateTextGroupRect(shape, origBox);				
+				lineShapes.push(shape);
+				linePosY += 0.9 * lineHeight;
+			
+				flowLines.push(line);
+			}			
+		}
+		
+		if (0 === flowLines[0].length) flowLines.shift();
+	}	
+	console.log("determine flow paragraph using Brava logic");
+	
+	//Transform the bounding box
+	var rect = { x: -n - m, y: -m - height - n, width: 2 * n + width + 4 * m, height:  2 * m + height + m };
+	var newBox = { x: 0, y: 0, width: width, height: height };
+	var tfmRect = transformRect(origBox, groupMatrix); 		
+	var newWidth = getDistance(tfmRect.points[0], tfmRect.points[1]);
+	var newHeight = getDistance(tfmRect.points[1], tfmRect.points[2]);
+	
+	if (origWidth !== newWidth || origHeight !== newHeight)
+		console.log("origWidth:" + origWidth + " newWidth: "+ newWidth + " origHeight: "+ origHeight + " newHeight: "+ newHeight);
+	var mtx = groupMatrix;
+	if (newWidth > rect.width || newHeight > rect.height)
+	{		
+		var w =  newWidth > rect.width? newWidth: rect.width;
+		var h = newHeight > rect.height? newHeight: rect.height;	
+		newBox = { x: 0, y: 0, width: w, height: h };
+		rect = {
+			x: -n - m,
+			y: -m - h - n,
+			width: 2 * n + w + 4 * m,
+			height: 2 * m + h + m
+		};
+		
+	} 
+	else 
+		mtx = multiplyMatrices(groupMatrix, translate(rect.x, rect.y));
+	
+	console.log("mtx:" + mtx[0]+ " "+ mtx[1]+ " "+ mtx[2]+ " "+ mtx[3]+ " "+ mtx[4]+ " "+ mtx[5]);
+	
+	tfmRect = transformRect(newBox, mtx);
+		
+	var origWidth = getDistance(bravaPoints[0], bravaPoints[1]);
+	var origHeight = getDistance(bravaPoints[1], bravaPoints[2]);	
+	newWidth = getDistance(tfmRect.points[0], tfmRect.points[1]);
+	newHeight = getDistance(tfmRect.points[1], tfmRect.points[2]);
+	
+	if (origWidth !== newWidth || origHeight !== newHeight)
+		console.log("origWidth:" + origWidth + " newWidth: "+ newWidth + " origHeight: "+ origHeight + " newHeight: "+ newHeight);
+
+	var points = tfmRect.points;
 	for(var i = 0, len = pointNodes.length; i < len; i++)
 	{
 		var n = pointNodes[i];
@@ -992,8 +1124,7 @@ export const transformTextPoints = (context, br_text, text) => {
 		
 		xEl.textContent = points[i].x;
 		yEl.textContent = points[i].y; 	
-		//console.log("transformTextPoints - text: '"+ text +"' " + points[i].x + ", "+ points[i].y);
-	
+
 	}
 
 	svgNode.ownerDocument.body.removeChild(svgNode);	
