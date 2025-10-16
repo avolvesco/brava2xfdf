@@ -386,6 +386,51 @@ const createEllipse = async (context, br_ellipseNode) => {
   return xfdf_circleNode;
 };
 
+
+const createArc = async (context, br_arc) => {
+
+  const { pageRotationDegree, pageIndex, outXfdfDoc, inXrlDoc, authorName } = context;
+  const {
+    color: colorAttr
+  } = br_arc.attributes;
+  const { points, dltoXMultiplier } = getConvertedPointsFromNode(br_arc, context);
+  var centerPt = {x: points[0].x , y: points[0].y};	  
+
+  var radius = Math.sqrt(Math.pow(Math.abs(points[1].x - centerPt.x), 2) + 
+		Math.pow(Math.abs(points[1].y - centerPt.y), 2));
+ 
+  var minX = centerPt.x - radius, minY = centerPt.y - radius, maxX = centerPt.x  + radius, maxY = centerPt.y + radius;
+  
+  const xfdf_ArcNode = outXfdfDoc.createElement('ink');
+  
+  setXfdfAttributes(
+    {
+      page: pageIndex,
+      title: authorName,
+      subject:"Arc",	
+ 	  color: `#${rgbToHex(...colorAttr.value.split('|'))}`,
+      rect: `${minX},${minY},${maxX},${maxY}`,
+	  flags: 'print'        
+    },
+    br_arc.attributes,
+    xfdf_ArcNode,
+    context,
+  );
+      
+  let verticesContent = '';
+  forEach(points, ({ x, y }) => {
+	verticesContent += `${x},${y};`;
+  });
+ 
+  // remove last semicolon
+  verticesContent = verticesContent.slice(0, -1);
+
+  const xfdf_verticesNode = outXfdfDoc.createElement('vertices');
+  xfdf_verticesNode.appendChild(outXfdfDoc.createTextNode(verticesContent));
+  xfdf_ArcNode.appendChild(xfdf_verticesNode);
+  return xfdf_ArcNode;
+};
+
 const createLine = async (context, br_line, headType = '') => {
   const { pageIndex, outXfdfDoc, authorName } = context;
 
@@ -1921,6 +1966,8 @@ const processAnnot = (br_annot, context, topContext, bookmarks) => {
     nodePromise = createLine(context, br_annot);
   } else if (br_annot.nodeName === 'Ellipse') {
     nodePromise = createEllipse(context, br_annot);
+  } else if (br_annot.nodeName === 'Arc') {
+    nodePromise = createArc(context, br_annot);
   } else if (br_annot.nodeName === 'Polyline' || br_annot.nodeName === 'NonEditPolyline') {
     nodePromise = createNodeWithVertices(context, br_annot, 'polyline');
   } else if (br_annot.nodeName === 'Polygon' || br_annot.nodeName === 'NonEditPolygon') {
