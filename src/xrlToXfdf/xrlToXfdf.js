@@ -557,7 +557,6 @@ const createFreeTextNode = async (context, br_text) => {
 	 
   }
 
-
   const boundingBoxHeight = maxY - minY;
   const boundingBoxWidth = maxX - minX;
   const imageFontSizeMagicFactor = 1 / (700 / wvHeight);
@@ -626,22 +625,14 @@ const createFreeTextNode = async (context, br_text) => {
 */
 
 	let size = {minX: minX, minY: minY, maxX: maxX, maxY: maxY};
-	const convertBravaTextMetrics = function (text, fontFace, fontSize, width, height, txtRotation) {
-		let canvas = document.createElement('canvas');
-		let ctx = canvas.getContext('2d');
-		ctx.font = `${fontSize}pt ${fontFace}`;
-		var txtWidth = width, txtHeight = height;	
-		//If text is rotated, we need to switch the width and height
-		if (txtRotation == 90 || txtRotation == 270) {
-			txtWidth = height;
-			txtHeight = width;
-		}
-		ctx.textBaseline = 'middle';
-		ctx.textAlign = "left";
-		const lines = text.split(/\r\n/);
-		var newLines = []; //the separation of the text into lines that will fit the width and height
+	const pointsToPixels = (points, dpi = 96) => points * (dpi / 72);
+	const pixelToPoints = (pixels, dpi = 96) => (pixels / dpi) * 72;
+	
+	const getTextMetrics = (lines, ctx, txtWidth, txtHeight) => {
 		var totalWidth = 0, totalHeight = 0; //calculated total width and height of the text
-		var lineWidth = 0, currentLine = "";
+		var lineWidth = 0, charCount = 0, currentLine = "", scaleFactor = isPuppeteer() ? 0.95: 1;
+		var newLines = []; //the separation of the text into lines that will fit the width and height
+					
 		for (var idx = 0, ilen = lines.length; idx < ilen; idx++) {
 			var line = lines[idx];
 			
@@ -650,97 +641,137 @@ const createFreeTextNode = async (context, br_text) => {
 				metrics = ctx.measureText(line);
 				lineWidth = metrics.width;
 				totalHeight += metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent;
-				newLines.push(line.trim());
+				var lineInfo = {text: line.trim(), width: metrics.width * scaleFactor, 
+					height: (metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent) * scaleFactor};
+				newLines.push(lineInfo);
+				//console.log(lineInfo.text + " width: " + lineInfo.width + " height:" + lineInfo.height);
+				charCount += line.trim().length;
 				if (totalWidth < lineWidth) totalWidth = lineWidth;
 				currentLine = "";
 				lineWidth = 0;
 				continue;
 			}
+				
 			var words = line.split(/(\s+)/);
 			for (var jdx = 0, jlen = words.length; jdx < jlen; jdx++) {
 				var word = words[jdx];
 				
 				//Calculate the width and height of the text
-				var metrics = ctx.measureText(word);
+				var metrics = ctx.measureText(word), addedWord = false;
 				var wordWidth = metrics.width, wordHeight = metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent;
-				var fitLine = txtWidth > (lineWidth + wordWidth);
+				var fitLine = txtWidth > (lineWidth + wordWidth) * scaleFactor;
 				
 				//Determine if the word fits the line, just append the word to the current line
 				if (fitLine) {
 					lineWidth += wordWidth;
 					currentLine += word;
+					addedWord = true;
 				} 
 				
 				//If the non-space word no longer fits the line, add it as a new line
 				else if (word.trim() !== "") {
-					//Update the totalWidth and totalHeight of text
-					totalHeight += wordHeight;		   
-					if (totalWidth < lineWidth) totalWidth = lineWidth;
-					if ( idx === 0 && currentLine.trim() != "")
-						newLines.push(currentLine.trim())
 					
+					//Update the totalWidth and totalHeight of text
+					metrics = ctx.measureText(currentLine.trim());					
+					if (totalWidth < metrics.width) totalWidth = metrics.width;
+					totalHeight += metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent;
+					
+					charCount += currentLine.trim().length;
+					var lineInfo = {text: currentLine.trim(), width: metrics.width * scaleFactor, 
+						height: (metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent) * scaleFactor};
+					newLines.push(lineInfo);
+					//console.log(lineInfo.text + " width: " + lineInfo.width + " height:" + lineInfo.height);
 					currentLine = word;
 					lineWidth = wordWidth;
+					addedWord = true;
 				}
 				
 				//If the last word of the line, push the entire line into the newLine array.
 				if (jdx === jlen - 1) {
-					currentLine += word;
+					if (!addedWord) currentLine += word;
 					metrics = ctx.measureText(currentLine.trim());
-					lineWidth = metrics.width;
+					if (totalWidth < metrics.width) 
+						totalWidth = metrics.width;
+					
 					totalHeight += metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent;
-					newLines.push(currentLine.trim());
+					charCount += currentLine.trim().length;
+					var lineInfo = {text: currentLine.trim(), width: metrics.width * scaleFactor, 
+						height: (metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent) * scaleFactor};
+					newLines.push(lineInfo);
+					//console.log(lineInfo.text + " width: " + lineInfo.width + " height:" + lineInfo.height);
 					if (totalWidth < lineWidth) totalWidth = lineWidth;
 					currentLine = "";
 					lineWidth = 0;
 				}
 				
-			}
+			}			
 		}
-		
+	
+		return { totalWidth: totalWidth * scaleFactor, totalHeight: totalHeight * scaleFactor, lineCount: newLines.length, charCount: charCount};
+	}
+	
+	const convertBravaTextMetrics = function (text, fontFace, fontSize, width, height, txtRotation) {
+		let canvas = document.createElement('canvas');
+		let ctx = canvas.getContext('2d');
+		ctx.font = `${fontSize}pt ${fontFace}`;
+		var txtWidth = pointsToPixels(width), txtHeight = pointsToPixels(height);	
+		//If text is rotated, we need to switch the width and height
+		if (txtRotation == 90 || txtRotation == 270) {
+			txtWidth = pointsToPixels(height);
+			txtHeight = pointsToPixels(width);
+		}
+		ctx.textBaseline = 'middle';
+		ctx.textAlign = "left";
+		const lines = text.split(/\r\n/);
+		var { totalWidth: totalWidth, totalHeight: totalHeight, lineCount: lineCount } = getTextMetrics(lines, ctx, txtWidth, txtHeight);
+				
+		//console.log("Freetext: "+ lines[0]);
 		//The min and max ratio to fill the height of the box
-		var maxRatioThreshold = 0.99, minRatioThreshold = 0.75;
+		var maxRatioThreshold = 0.99, minRatioThreshold = 0.75, correctSize = false, retries = 20;
+		while (!correctSize && retries > 0)
+		{	var scaleFactor = 1;
+			if (totalHeight > txtHeight) 
+				scaleFactor = txtHeight / totalHeight;
+			else if (totalHeight/txtHeight < minRatioThreshold) {
+				if (totalWidth > txtWidth) 
+					scaleFactor = txtWidth / totalWidth;
+				else 
+					scaleFactor = 1.05;			
+			}
+			
+			var newFontSize = fontSize * scaleFactor;
+			//console.log("Freetext newFontSize: "+ newFontSize +" fontSize: " + fontSize);
+			ctx.font = `${newFontSize}pt ${fontFace}`;			  
+			var metrics = getTextMetrics(lines, ctx, txtWidth, txtHeight);
+			//console.log("totalHeight: " + totalHeight + " txtHeight: " + txtHeight + " totalWidth: " + totalWidth + " txtWidth: " + txtWidth + " lineCount: " + lineCount +  " newLineCount: " +metrics.lineCount );
+			if (parseInt(fontSize) === parseInt(newFontSize))
+				correctSize = true;
+			//If it previously fits in a single line but the new font takes more than 1 line, use the previous font size
+			else if (totalHeight < txtHeight && totalWidth < txtWidth && lineCount == 1 && metrics.lineCount > 1){				
+				correctSize = true;
+				continue;
+			} 
+			else
+				correctSize = (totalHeight < txtHeight && totalWidth < txtWidth &&
+					totalHeight/txtHeight > minRatioThreshold );		
+			totalWidth = metrics.totalWidth;
+			totalHeight = metrics.totalHeight;
+			lineCount = metrics.lineCount; 
 		
-		//If text did not fit the height, reduce the font size and try again
-		if (totalHeight > txtHeight) {		
-		   //if the text fits with more than 1 line, just reduce the font size.		
-		   var scaleFactor = maxRatioThreshold - (newLines.length == 1? (totalHeight/txtHeight): 0.85);
-		   var newFontSize = Math.abs(Math.ceil(fontSize - Math.abs(fontSize * scaleFactor)));
-		   if (newFontSize>=fontSize) newFontSize = fontSize - 1;		   
-		   if (txtRotation == 90 || txtRotation == 270) 
-			   return convertBravaTextMetrics(text, fontFace, newFontSize, txtHeight, txtWidth, txtRotation)
-		   else
-			   return convertBravaTextMetrics(text, fontFace, newFontSize, txtWidth, txtHeight, txtRotation)
+			fontSize = newFontSize;			
+			retries--;	
 		}
-		//If the totalHeight is below minRatioThreshold, we need to increase the font size to fill the spaces
-		else if (totalHeight/txtHeight < minRatioThreshold) {
-		   var scaleFactor = minRatioThreshold - (totalHeight/txtHeight);
-		   var newFontSize = Math.abs(Math.ceil(fontSize + Math.abs(fontSize * scaleFactor)));
-		   if (newFontSize<=fontSize) newFontSize = fontSize + 1;
-		   fontSize = newFontSize;			
-		   var newHeight = 0;
-		   if (lines.length === 1) {
-			   ctx.font = `${fontSize}pt ${fontFace}`;
-			   metrics = ctx.measureText(text);			   
-			   newHeight = totalHeight + metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent;
-			   //if new height is greater than height, just extend the width
-			   if (metrics.width > width && newHeight > txtHeight) txtWidth = metrics.width;
-		   }					   
-		}
-		//If height is just right but exceeds width, extend the width of the freetext to fit
-		//This is the behavior in the Brava HTML viewer
-		else if (totalWidth > txtWidth) txtWidth = totalWidth;
-		
+
 		//If text is rotated, we need to switch the width and height
 		if (txtRotation == 90 || txtRotation == 270) 
-			return {width: txtHeight, height: txtWidth, fontSize: fontSize+"pt"};
+			return {width: txtHeight, height: txtWidth, fontSize: Math.round(fontSize)+"pt"};
 		else 
-			return {width: txtWidth, height: txtHeight, fontSize: fontSize+"pt"};
+			return {width: txtWidth, height: txtHeight, fontSize: Math.round(fontSize)+"pt"};
 		
 	};
 
 	//Get the font size adjusted to a scale factor
-	var bravaFontSize = Math.floor(parseFloat(fontVal) / 0.0352778 * 8);
+	var bravaFontSize = parseFloat(fontVal) * 83 / 0.5; //Math.floor(parseFloat(fontVal) / 0.0352778 * 8);
 	var txtWidth = size.maxX - size.minX , txtHeight = size.maxY - size.minY;
 	var txtRotation = Math.abs(rotationDegree - context.pageRotationDegree); 
 	console.log("txtRotation:"+txtRotation);
@@ -750,7 +781,7 @@ const createFreeTextNode = async (context, br_text) => {
 	}
 	
 	//If font is not Arial and Times New Roman, use the Arial font so we can calculate the fontSize correctly
-	if (fontAttr.value !== "Arial" && fontAttr.value !== "Times New Roman") fontAttr.value = "Helvetica";
+	if (fontAttr.value !== "Times New Roman") fontAttr.value = "Helvetica";
 	
 	let txtMetrics = convertBravaTextMetrics(text, fontAttr.value, bravaFontSize, txtWidth, txtHeight, txtRotation);
 	let fontFace = fontAttr.value.replace(/\s+/g, ""), fontSize = txtMetrics.fontSize.replace("pt", "");
@@ -758,20 +789,20 @@ const createFreeTextNode = async (context, br_text) => {
 	//Adjust the size according to the pageRotation
 	switch (context.pageRotationDegree) {
 		case 90:
-			size.maxX = size.minX + txtMetrics.height;
-			size.maxY = size.minY + txtMetrics.width;
+			size.maxX = size.minX + pixelToPoints(txtMetrics.height);
+			size.maxY = size.minY + pixelToPoints(txtMetrics.width);
 			break;
 		case 180:
-			size.maxX = size.minY + txtMetrics.width;
-			size.maxY = size.minX + txtMetrics.height;
+			size.maxX = size.minY + pixelToPoints(txtMetrics.width);
+			size.maxY = size.minX + pixelToPoints(txtMetrics.height);
 			break;
 		case 270:
-			size.minX = size.maxX - txtMetrics.height
-			size.minY = size.maxY - txtMetrics.width;
+			size.minX = size.maxX - pixelToPoints(txtMetrics.height);
+			size.minY = size.maxY - pixelToPoints(txtMetrics.width);
 			break;
 		case 0:
-			size.maxX = size.minX + txtMetrics.width;
-			size.maxY = size.minY + txtMetrics.height;
+			size.maxX = size.minX + pixelToPoints(txtMetrics.width);
+			size.maxY = size.minY + pixelToPoints(txtMetrics.height);
 			break;
 	}
 	console.log("txtMetrics.width:"+txtMetrics.width +" txtMetrics.height:" + txtMetrics.height +" context.pageRotationDegree: "+context.pageRotationDegree);
