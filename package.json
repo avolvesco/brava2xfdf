@@ -6,7 +6,7 @@
     "lodash": "^4.17.11"
   },
   "scripts": {
-    "build": "rm -rf build/ && mkdir build &&  parcel build ./src/xrlToXfdf/xrlToXfdf.js -d ./build --out-file xrlToXfdf.min.js --no-source-maps && rm -rf ./build/lib && cp -a ./public/lib/. ./build/lib && cp -a files/. build/"
+    "build": "rm -rf build/ && mkdir build &&  parcel build ./src/xrlToXfdf/xrlToXfdf.js -d ./build --out-file xrlToXfdf.min.js --no-source-maps && rm -rf ./build/lib && cp -a ./public/lib/. ./build/lib && cp -a files/. build/",
 	"build-debug": "rm -rf build/ && mkdir build &&  parcel build ./src/xrlToXfdf/xrlToXfdf.js -d ./build --out-file xrlToXfdf.min.js --no-source-maps --no-minify && rm -rf ./build/lib && cp -a ./public/lib/. ./build/lib && cp -a files/. build/"
   },
   "devDependencies": {
