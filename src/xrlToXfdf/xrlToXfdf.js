@@ -476,7 +476,7 @@ const createLine = async (context, br_line, headType = '') => {
   return xfdf_line;
 };
 
-const createFreeTextNode = async (context, br_text) => {
+const processFreeText = async (context, br_text) => {
   const {
     pageIndex,
     pageConversion,
@@ -518,8 +518,6 @@ const createFreeTextNode = async (context, br_text) => {
 	if (elLines[idx].innerHTML !== "")
 		text += (text === "" ? "" : '\r\n') + elLines[idx].innerHTML;
   }	
-					  
-  //transformTextPoints(context, br_text, text);
 	
   var { rectPoints, rotationDegree } = getConvertedPointsFromNode(br_text, {
     ...context,
@@ -534,13 +532,8 @@ const createFreeTextNode = async (context, br_text) => {
     maxX,
     maxY,
   } = rectPoints;
-  
-  if (rectPoints.minX > context.pageInfo.width || rectPoints.maxX > context.pageInfo.width ||
-	rectPoints.minY > context.pageInfo.height || rectPoints.maxY > context.pageInfo.height ||
-	context.txtTranslateY !== undefined
-  ) {
 
-    console.log("freetext rectPoints:" + minX +", "+minY+","+maxX+","+maxY +" width: "+ context.pageInfo.width +" height:"+ context.pageInfo.height);
+    //console.log("freetext rectPoints:" + minX +", "+minY+","+maxX+","+maxY +" width: "+ context.pageInfo.width +" height:"+ context.pageInfo.height);
  	transformTextPoints(context, br_text, text);
 	
 	rectPoints = getConvertedPointsFromNode(br_text, {
@@ -555,14 +548,6 @@ const createFreeTextNode = async (context, br_text) => {
 	maxX = rectPoints.maxX;
 	maxY = rectPoints.maxY;
 	 
-  }
-
-  const boundingBoxHeight = maxY - minY;
-  const boundingBoxWidth = maxX - minX;
-  const imageFontSizeMagicFactor = 1 / (700 / wvHeight);
-  // Empirically calculated Font size factor
-  const FONTSIZE_MAGIC_NUM2 = (68 / 1.06556) * imageFontSizeMagicFactor;
-  const FONTSIZE_MAGIC_NUM = (wvHeight / 10.37354);
 
   const {
     color: colorAttr,
@@ -571,58 +556,8 @@ const createFreeTextNode = async (context, br_text) => {
     fontsize: fontsizeAttr,
     opaque: opaqueAttr,
   } = br_text.attributes;
-  const xfdf_freetext = outXfdfDoc.createElement('freetext');
-
-  let fontVal = fontsizeAttr.value;
-
-//START Changed logic for calculating the FreeText font size by using the Canvas measureText method so it can handle any font size from Brava text annotations.
-
-//Returns the adjusted fontsize, width, height of the text given the Brava font face and font size that will fit 
-//the specified width and height
- /*
-  const thresholds = [
-    { limit: 0.005, multiplier: 0.5 },
-    { limit: 0.01, multiplier: 0.575 },
-    { limit: 0.015, multiplier: 0.6 },
-    { limit: 0.02, multiplier: 0.275 },
-    { limit: 0.025, multiplier: 0.3 },
-    { limit: 0.035, multiplier: 0.3375 },
-    { limit: 0.05, multiplier: 0.375 },
-    { limit: 0.07, multiplier: 0.4 },
-    { limit: 0.09, multiplier: 0.45 },
-    { limit: 0.125, multiplier: 0.5 },
-    { limit: 0.15, multiplier: 0.525 },
-    { limit: 0.2, multiplier: 0.55 },
-    { limit: 0.3, multiplier: 0.6 },
-    { limit: 0.4, multiplier: 0.65 },
-    { limit: 0.5, multiplier: 0.675 },
-    { limit: 0.6, multiplier: 0.7 },
-    { limit: 0.8, multiplier: 0.725 },
-    { limit: 1, multiplier: 0.75 }
-  ];
-
-  let adjustedFontSize = fontVal;
-
-  //Uses the font size limits and multipliers to adjust the font size based on arbitrary values to make the fonts the right size
-  //the check for boundingBoxHeight of 40 is to prevent the font from behaving weirdly when the bounding box is too big
-  for (let threshold of thresholds) {
-    if (fontVal < threshold.limit) {
-      adjustedFontSize = (boundingBoxWidth < 40) && (boundingBoxHeight < 40) ? (fontVal * boundingBoxHeight) * threshold.multiplier : fontVal;
-      break;
-    }
-  }
-
-  let FontSize = isImage ? adjustedFontSize * FONTSIZE_MAGIC_NUM2 : adjustedFontSize * FONTSIZE_MAGIC_NUM;
-  if (outputScale) {
-    FontSize *= outputScale;
-  }
-
-  const isCADFile = DriverInfo.toLowerCase() === 'dwg2dl' || DriverInfo.toLowerCase() === 'dgn2dl';
-  // For cad files having a really small fontsize.
-  if (isCADFile) {
-    FontSize *= 150;
-  }
-*/
+ 
+    let fontVal = fontsizeAttr.value;
 
 	let size = {minX: minX, minY: minY, maxX: maxX, maxY: maxY};
 	const pointsToPixels = (points, dpi = 96) => points * (dpi / 72);
@@ -638,7 +573,7 @@ const createFreeTextNode = async (context, br_text) => {
 			
 			//We found a spacer, just add a new line
 			if (line.trim() == "") {
-				metrics = ctx.measureText(line);
+				metrics = ctx.measureText(line.replace(" ", "H"));
 				lineWidth = metrics.width;
 				totalHeight += metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent;
 				var lineInfo = {text: line.trim(), width: metrics.width * scaleFactor, 
@@ -653,11 +588,20 @@ const createFreeTextNode = async (context, br_text) => {
 			}
 				
 			var words = line.split(/(\s+)/);
+			
+			//Remove the last words if it is an empty string or just a space
+			for (var i = words.length - 1; i >= 0; i--) {
+				if (words[i].trim() === "")
+					words.pop();
+				else break;
+			}
+			
+			
 			for (var jdx = 0, jlen = words.length; jdx < jlen; jdx++) {
 				var word = words[jdx];
 				
 				//Calculate the width and height of the text
-				var metrics = ctx.measureText(word), addedWord = false;
+				var metrics = ctx.measureText(word.replace(" ", "H")), addedWord = false;
 				var wordWidth = metrics.width, wordHeight = metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent;
 				var fitLine = txtWidth > (lineWidth + wordWidth) * scaleFactor;
 				
@@ -672,7 +616,7 @@ const createFreeTextNode = async (context, br_text) => {
 				else if (word.trim() !== "") {
 					
 					//Update the totalWidth and totalHeight of text
-					metrics = ctx.measureText(currentLine.trim());					
+					metrics = ctx.measureText(currentLine.replace(" ", "H"));					
 					if (totalWidth < metrics.width) totalWidth = metrics.width;
 					totalHeight += metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent;
 					
@@ -689,7 +633,7 @@ const createFreeTextNode = async (context, br_text) => {
 				//If the last word of the line, push the entire line into the newLine array.
 				if (jdx === jlen - 1) {
 					if (!addedWord) currentLine += word;
-					metrics = ctx.measureText(currentLine.trim());
+					metrics = ctx.measureText(currentLine.replace(" ", "H"));
 					if (totalWidth < metrics.width) 
 						totalWidth = metrics.width;
 					
@@ -735,12 +679,19 @@ const createFreeTextNode = async (context, br_text) => {
 			else if (totalHeight/txtHeight < minRatioThreshold) {
 				if (totalWidth > txtWidth) 
 					scaleFactor = txtWidth / totalWidth;
-				else 
-					scaleFactor = 1.05;			
+				else if (totalWidth/ txtWidth < minRatioThreshold) {
+					var ratio = Math.max(totalHeight / txtHeight, totalWidth/ txtWidth);
+					scaleFactor = (fontSize + (txtHeight * (minRatioThreshold - ratio)))/ fontSize;
+				}
+				//else 
+				//	scaleFactor = 1.05;			
 			}
 			
 			var newFontSize = fontSize * scaleFactor;
-			//console.log("Freetext newFontSize: "+ newFontSize +" fontSize: " + fontSize);
+			console.log("Freetext newFontSize: "+ newFontSize +" fontSize: " + fontSize + " scaleFactor: " + scaleFactor +"  text: " + text);
+			
+			console.log("totalHeight/txtHeight: "+ (totalHeight/txtHeight) +" totalWidth/ txtWidth: " + (totalWidth/ txtWidth) + " text: "+ text);
+			
 			ctx.font = `${newFontSize}pt ${fontFace}`;			  
 			var metrics = getTextMetrics(lines, ctx, txtWidth, txtHeight);
 			//console.log("totalHeight: " + totalHeight + " txtHeight: " + txtHeight + " totalWidth: " + totalWidth + " txtWidth: " + txtWidth + " lineCount: " + lineCount +  " newLineCount: " +metrics.lineCount );
@@ -753,7 +704,7 @@ const createFreeTextNode = async (context, br_text) => {
 			} 
 			else
 				correctSize = (totalHeight < txtHeight && totalWidth < txtWidth &&
-					totalHeight/txtHeight > minRatioThreshold );		
+					(totalHeight/txtHeight > minRatioThreshold || totalWidth/ txtWidth >  minRatioThreshold));		
 			totalWidth = metrics.totalWidth;
 			totalHeight = metrics.totalHeight;
 			lineCount = metrics.lineCount; 
@@ -805,98 +756,158 @@ const createFreeTextNode = async (context, br_text) => {
 			size.maxY = size.minY + pixelToPoints(txtMetrics.height);
 			break;
 	}
-	console.log("txtMetrics.width:"+txtMetrics.width +" txtMetrics.height:" + txtMetrics.height +" context.pageRotationDegree: "+context.pageRotationDegree);
+	//console.log("txtMetrics.width:"+txtMetrics.width +" txtMetrics.height:" + txtMetrics.height +" context.pageRotationDegree: "+context.pageRotationDegree);
 	
-	//END Changed logic for calculating the FreeText font size by using the Canvas measureText method so it can handle any font size from Brava text annotations. 
+	return {
+		rect: size,
+		bravaFontSize: parseFloat(fontVal),
+		fontSize: parseInt(txtMetrics.fontSize.replace("px", "")),
+		fontFace: fontAttr.value.replace(/\s+/g, ""),
+		rotationDegree: rotationDegree,
+		br_node: br_text
+	}
+};
 
-	
-  let copyAttributes = {
-    page: pageIndex,
-    title: authorName,	
-	rect: `${size.minX},${size.minY},${size.maxX},${size.maxY}`, //Use the rect we got from the calculation	
-    subject: 'FreeText',
-    TextColor: `#${rgbToHex(...colorAttr.value.split('|'))}`,
-    FontSize: txtMetrics.fontSize.replace("pt", ""), //Use the font size we got from the calculation	 
-    width: "0", // border always applied. So, set it to zero by default.
-    rotation: context.pageInfo.dataType === "stamp"? rotationDegree: context.pageRotationDegree  //Set appropriate rotation in the Freetext element
-  };
-
-  if (opaqueAttr.value === 'secondarycolor') {
-    copyAttributes = {
-      ...copyAttributes,
-      color: `#${rgbToHex(...secondaryColorAttr.value.split('|'))}`,
-      // Special case: If document is an image.
-      // Then the width of free text is a factor of bravaHeight
-      // Test file: png.png and png.xrl
-
-      // TODO: This does not depend on height
-      // because dividing both heights just makes it a constant.
-      // Look into really tall images and really short images
-      width: `${isImage ? 1 / (pageConversion.y * (700 / bravaHeight)) : 1}`,
-    };
-  } else if (opaqueAttr.value === 'hide') {
-    copyAttributes = {
-      ...copyAttributes,
-      color: `#${rgbToHex(255, 255, 255)}`,
-    };
-  }
-
-  setXfdfAttributes2(
-    copyAttributes,
-    br_text.attributes,
-    xfdf_freetext,
-    context,
-  );
-
-  const br_textLines = br_text.getElementsByTagName('TextLine');
-  let textContent = '';
-  forEach(br_textLines, (br_textLine) => {
-	if (br_textLine.textContent !== "") 
-		textContent = textContent + (textContent === "" ? "" : '\n') + br_textLine.textContent;
-  });
-  const xfdf_contentsNode = outXfdfDoc.createElement('contents');
-  xfdf_contentsNode.textContent = textContent;
-  const xfdf_defaultappearanceNode = outXfdfDoc.createElement('defaultappearance');
-  let defaultAppearanceText = '';
-  colorAttr.value.split('|').forEach((v) => {
-    defaultAppearanceText = `${defaultAppearanceText}${(parseInt(v, 10) / 255)} `;
-  });
-  defaultAppearanceText += `rg /${fontFace} ${fontSize} Tf`;  //Include the font face and size to the default appearance  
-  xfdf_defaultappearanceNode.textContent = defaultAppearanceText;
-  const xfdf_defaultstyleNode = outXfdfDoc.createElement('defaultstyle');
-
-  switch (textAlignment) {
-    case 'L':
-      xfdf_defaultstyleNode.textContent = `font: '${fontAttr.value}' ${txtMetrics.fontSize}; text-align: left;`; //Include the font face and size to the default style
-      break;
-    case 'R':
-      xfdf_defaultstyleNode.textContent = `font: '${fontAttr.value}' ${txtMetrics.fontSize}; text-align: right;`; //Include the font face and size to the default style
-      break;
-    default:
-      xfdf_defaultstyleNode.textContent = `font: '${fontAttr.value}' ${txtMetrics.fontSize}; text-align: center;`; //Include the font face and size to the default style
-      break;
-  }
-  xfdf_defaultstyleNode.textContent += ' text-vertical-align: center;';
+const createFreeTextNode = async (context, br_text) => {
+  const {
+    pageIndex,
+    pageConversion,
+    outXfdfDoc,
+    authorName,
+	bravaWidth,
+    bravaHeight,
+    isImage,
+    wvHeight,
+    outputScale,
+    textAlignment,
+    matrix,
+    DriverInfo,
+  } = context;
+ 
   
-  //Support bold, italics, underline settings from the Brava markup
-  var isBold = br_text.getAttribute("bold") === "true", isItalic = br_text.getAttribute("italic") === "true", isUnderline = br_text.getAttribute("underline") === "true";
-  if (isBold || isItalic || isUnderline) {
-	  var contentEl = xfdf_freetext.querySelector("contents-richtext");
-	  if (contentEl === null || contentEl === undefined) {
-		contentEl = outXfdfDoc.createElement("contents-richtext");
-		xfdf_freetext.appendChild(contentEl);
+  var index = 0, bravaFonts = {}, freeTextInfos = context.freeTextInfos;
+  
+  if (context.freeTextInfos.length !== context.freeTextPromises.length)
+  {
+	  freeTextInfos  = await Promise.all(context.freeTextPromises);    	
+	  context.freeTextInfos = freeTextInfos;
+	  
+	  //Determine the font size to use for the Brava Font we previously calculated.
+	  //If we find a Brava font in multiple freeText, use the smallest font size for it
+	   for(var i = 0, len = freeTextInfos.length; i < len; i++) 
+	   {		
+		var info = freeTextInfos[i], newFontSize = info["fontSize"];
+		var bravaFontProp = info["fontFace"]+"|" + info["bravaFontSize"];
+		if (context.bravaFonts[bravaFontProp] === undefined)
+			context.bravaFonts[bravaFontProp] = newFontSize;
+		else if (context.bravaFonts[bravaFontProp] > newFontSize)
+			context.bravaFonts[bravaFontProp] = newFontSize;			
+	
+		info.br_node.setAttribute("index", i);
 	  }
-	  contentEl.innerHTML = "<body><p><span style='" +
-			(isBold ? "font-weight:bold;" : "") + (isItalic ? "font-style:italic;" : "") +
-			(isUnderline ? "text-decoration:underline;" : "") +
-			"'>" + xfdf_contentsNode.innerHTML + "</span></p></body>";
   }
   
-  xfdf_freetext.appendChild(xfdf_contentsNode);
-  xfdf_freetext.appendChild(xfdf_defaultappearanceNode);
-  xfdf_freetext.appendChild(xfdf_defaultstyleNode);
+  const index = parseInt(br_text.getAttribute("index")), info = freeTextInfos[index],
+    size = info.rect, bravaFontProp = info["fontFace"]+"|" + info["bravaFontSize"], fontSize = context.bravaFonts[bravaFontProp], 
+	fontFace = info["fontFace"];
 
-  return xfdf_freetext;
+	const xfdf_freetext = outXfdfDoc.createElement('freetext');
+		  
+	  var {
+		color: colorAttr,
+		secondarycolor: secondaryColorAttr,
+		font: fontAttr,
+		fontsize: fontsizeAttr,
+		opaque: opaqueAttr,
+	  } = br_text.attributes;
+	  
+	  let copyAttributes = {
+		page: pageIndex,
+		title: authorName,	
+		rect: `${size.minX},${size.minY},${size.maxX},${size.maxY}`, //Use the rect we got from the calculation	
+		subject: 'FreeText',
+		TextColor: `#${rgbToHex(...colorAttr.value.split('|'))}`,
+		FontSize: fontSize, //Use the font size we got from the calculation	 
+		width: "0", // border always applied. So, set it to zero by default.
+		rotation: context.pageInfo.dataType === "stamp"? info["rotationDegree"]: context.pageRotationDegree  //Set appropriate rotation in the Freetext element
+	  };
+
+	  if (opaqueAttr.value === 'secondarycolor') {
+		copyAttributes = {
+		  ...copyAttributes,
+		  color: `#${rgbToHex(...secondaryColorAttr.value.split('|'))}`,
+		  // Special case: If document is an image.
+		  // Then the width of free text is a factor of bravaHeight
+		  // Test file: png.png and png.xrl
+
+		  // TODO: This does not depend on height
+		  // because dividing both heights just makes it a constant.
+		  // Look into really tall images and really short images
+		  width: `${isImage ? 1 / (pageConversion.y * (700 / bravaHeight)) : 1}`,
+		};
+	  } else if (opaqueAttr.value === 'hide') {
+		copyAttributes = {
+		  ...copyAttributes,
+		  color: `#${rgbToHex(255, 255, 255)}`,
+		};
+	  }
+
+	  setXfdfAttributes2(
+		copyAttributes,
+		br_text.attributes,
+		xfdf_freetext,
+		context,
+	  );
+
+	  const br_textLines = br_text.getElementsByTagName('TextLine');
+	  let textContent = '';
+	  forEach(br_textLines, (br_textLine) => {
+		if (br_textLine.textContent !== "") 
+			textContent = textContent + (textContent === "" ? "" : '\n') + br_textLine.textContent;
+	  });
+	  const xfdf_contentsNode = outXfdfDoc.createElement('contents');
+	  xfdf_contentsNode.textContent = textContent;
+	  const xfdf_defaultappearanceNode = outXfdfDoc.createElement('defaultappearance');
+	  let defaultAppearanceText = '';
+	  colorAttr.value.split('|').forEach((v) => {
+		defaultAppearanceText = `${defaultAppearanceText}${(parseInt(v, 10) / 255)} `;
+	  });
+	  defaultAppearanceText += `rg /${fontFace} ${fontSize}px Tf`;  //Include the font face and size to the default appearance  
+	  xfdf_defaultappearanceNode.textContent = defaultAppearanceText;
+	  const xfdf_defaultstyleNode = outXfdfDoc.createElement('defaultstyle');
+
+	  switch (textAlignment) {
+		case 'L':
+		  xfdf_defaultstyleNode.textContent = `font: '${fontAttr.value}' ${fontSize}px; text-align: left;`; //Include the font face and size to the default style
+		  break;
+		case 'R':
+		  xfdf_defaultstyleNode.textContent = `font: '${fontAttr.value}' ${fontSize}px; text-align: right;`; //Include the font face and size to the default style
+		  break;
+		default:
+		  xfdf_defaultstyleNode.textContent = `font: '${fontAttr.value}' ${fontSize}px; text-align: center;`; //Include the font face and size to the default style
+		  break;
+	  }
+	  xfdf_defaultstyleNode.textContent += ' text-vertical-align: top;';
+	  
+	  //Support bold, italics, underline settings from the Brava markup
+	  var isBold = br_text.getAttribute("bold") === "true", isItalic = br_text.getAttribute("italic") === "true", isUnderline = br_text.getAttribute("underline") === "true";
+	  if (isBold || isItalic || isUnderline) {
+		  var contentEl = xfdf_freetext.querySelector("contents-richtext");
+		  if (contentEl === null || contentEl === undefined) {
+			contentEl = outXfdfDoc.createElement("contents-richtext");
+			xfdf_freetext.appendChild(contentEl);
+		  }
+		  contentEl.innerHTML = "<body><p><span style='" +
+				(isBold ? "font-weight:bold;" : "") + (isItalic ? "font-style:italic;" : "") +
+				(isUnderline ? "text-decoration:underline;" : "") +
+				"'>" + xfdf_contentsNode.innerHTML + "</span></p></body>";
+	  }
+	  
+	  xfdf_freetext.appendChild(xfdf_contentsNode);
+	  xfdf_freetext.appendChild(xfdf_defaultappearanceNode);
+	  xfdf_freetext.appendChild(xfdf_defaultstyleNode);
+	  
+    return xfdf_freetext;
 };
 
 var conversation_global;
@@ -1985,8 +1996,8 @@ const processAnnot = (br_annot, context, topContext, bookmarks) => {
       matrix,
       isGroup: true,
     }, { authorName, ...topContext }, bookmarks));
-  } else if (br_annot.nodeName === 'Text') {
-    nodePromise = createFreeTextNode(context, br_annot);
+  } else if (br_annot.nodeName === 'Text') {    
+	nodePromise = createFreeTextNode(context, br_annot);
   } else if (br_annot.nodeName === 'Raster') {
     nodePromise = createStampNode(context, br_annot);
   } else if (br_annot.nodeName === 'Line') {
@@ -2041,7 +2052,11 @@ const processAnnot = (br_annot, context, topContext, bookmarks) => {
 
   if (nodePromise) {
     nodePromise = nodePromise.catch((error) => {
-      console.error(`Encountered error when trying to convert node: ${br_annot.nodeName}\n`, error);
+		if (isPuppeteer())
+			console.error(`Encountered error when trying to convert node: ${br_annot.nodeName}\n${error.stack}\n`, error);
+		else
+				console.error(`Encountered error when trying to convert node: ${br_annot.nodeName}\n`, error);
+
       return null;
     });
     nodePromises.push(nodePromise);
@@ -2091,15 +2106,22 @@ const processNodes = (br_annots, groupContext = {}, topContext = {}, bookmarks =
     primaryAnnotationId,
     pageRotationMatrix: rotationMatricesProxy[pageRotationDegree],
   };
-  const nodePromises = [];
+  const nodePromises = [], freeTextPromises = [];
 
-  // pre-process links
+  // pre-process links and text
   forEach(filtered_br_annots, (br_annot) => {
     let nodePromise;
 
     if (br_annot.attributes.hyperlink && br_annot.attributes.hyperlink.value) {
       nodePromise = createLink(context, br_annot);
     }
+	
+	//Calculate rect and fontsize of the freetext
+	if (br_annot.nodeName === 'Text')
+	{
+		let freetextPromise = processFreeText(context, br_annot);
+		context.freeTextPromises.push(freetextPromise);
+	}
 
     if (nodePromise) {
       nodePromise = nodePromise.catch((error) => {
@@ -2109,10 +2131,11 @@ const processNodes = (br_annots, groupContext = {}, topContext = {}, bookmarks =
       nodePromises.push(nodePromise);
     }
   });
-
+  
   forEach(filtered_br_annots, (filtered_br_annot) => {
-    nodePromises.push(...processAnnot(filtered_br_annot, context, topContext, bookmarks));
+	  nodePromises.push(...processAnnot(filtered_br_annot, context, topContext, bookmarks));
   });
+  
 
   return nodePromises;
 };
@@ -2212,13 +2235,16 @@ const xrlToXfdf = async (inputXrlStr, pageInfos, extension, freeTextJustificatio
       },
       matrix: [1, 0, 0, 1, 0, 0], // identity matrix
       pageRotationDegree,	 
-	  pageInfo: pageInfo
+	  pageInfo: pageInfo,
+	  freeTextPromises: [],
+	  freeTextInfos: [],
+	  bravaFonts: {}
     };
 
-    forEach(br_authors, (br_author) => {
+    forEach(br_authors, async (br_author) => {
       const authorName = getAttributeValue(br_author, 'name');
       const br_annots = br_author.childNodes;
-      nodePromises.push(...processNodes(br_annots, {}, { authorName, ...topContext }, bookmarks));
+	  nodePromises.push(...processNodes(br_annots, {}, { authorName, ...topContext }, bookmarks));
     });
   });
 

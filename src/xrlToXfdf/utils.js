@@ -828,7 +828,7 @@ export const isPuppeteer = () => {
 
 
 export const transformTextPoints = (context, br_text, text) => {
-    const { 
+	const { 
 		bravaHeight,
 		bravaWidth,
 		pageRotationDegree,
@@ -843,6 +843,7 @@ export const transformTextPoints = (context, br_text, text) => {
   
 	const pointNodes = br_text.getElementsByTagName('Point');
 	var bravaPoints = [];
+	
 	for(var i = 0, len = pointNodes.length; i < len; i++)
 	{
 		var n = pointNodes[i], xEl = n.getElementsByTagName('x')[0], yEl =  n.getElementsByTagName('y')[0];
@@ -854,7 +855,7 @@ export const transformTextPoints = (context, br_text, text) => {
 	var width = getDistance(bravaPoints[0], bravaPoints[1]);
 	var	height = getDistance(bravaPoints[1], bravaPoints[2]);
 	
-	if (context.txtTranslateY === undefined) return;
+	//if (context.txtTranslateY === undefined) return;
 		
 	var naturalPageHeight = 1440;
 	var naturalPageWidth = naturalPageHeight * bravaWidth / bravaHeight;
@@ -914,6 +915,7 @@ export const transformTextPoints = (context, br_text, text) => {
 	
 	const br_textLines = br_text.getElementsByTagName('TextLine');
 	let textContent = '';
+	
     for(var i = 0, len = br_textLines.length; i < len; i++)  {
 		lines.push(br_textLines[i].textContent);
     };	
@@ -959,7 +961,6 @@ export const transformTextPoints = (context, br_text, text) => {
 		svgTxtNode.setAttribute("transform",  getTransformFromMatrix( mtxTransform));
 		svgTxtNode.setAttribute( "font-size", bravaFontSize - (isPuppeteer()?  bravaFontSize * 0.56: 0));
 		
-		console.log("checking bounds of text line " + svgTxtNode.textContent);
 		return { node: svgTxtNode, 
 			bbox: {x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height },
 			transform: mtxTransform		
@@ -1035,9 +1036,12 @@ export const transformTextPoints = (context, br_text, text) => {
 	//Determine the flow of text for each line and the bounding box of the entire text using logic in Brava HTML Viewer 
 	var flowLines = [], lineShapes = [], k = false, lineHeight = 0, linePosY = 0, firstLineY = 0, origBox = null;
 	ctx.font = "24px '" + fontAttr.value + "'";	
+	
+	try {
 	for (var len = lines.length; len > 0; len--){
 		var line = "";
 		var words = lines.shift().split(/(\s+)/);
+			
 		if (1 === words.length && "" === words[0] && true === k)
 			k = false;
 		else {
@@ -1047,8 +1051,9 @@ export const transformTextPoints = (context, br_text, text) => {
 				if (ctx.measureText(line + t).width <= lineWidth)
 				{
 					line += t;
-					if ("" === line && "" === flowLines[flowLines.length - 1]) k = true;
-				}else if ("" !== line) {
+					if ("" === line && flowLines.length > 0 && "" === flowLines[flowLines.length - 1]) k = true;
+				} else if ("" !== line) {
+					
 					//Create a new text element for the line and append it to the SVG Node. Then get the appropriate bounds of the text element
 					var shape = createTextNode(svgNode, line, firstLineY - linePosY);	
 					if (lineHeight === 0) lineHeight = shape.bbox.height;				
@@ -1059,8 +1064,11 @@ export const transformTextPoints = (context, br_text, text) => {
 		
 					flowLines.push(line);
 					line = t + " ";
-				};
+				} else if (0 === words.length){
+					line = t;
+				}
 			}
+		
 			if ("" !== line) {
 				//Create a new text element for the line and append it to the SVG Node. Then get the appropriate bounds of the text element
 				var shape = createTextNode(svgNode, line, firstLineY - linePosY);	
@@ -1072,9 +1080,13 @@ export const transformTextPoints = (context, br_text, text) => {
 				flowLines.push(line);
 			}			
 		}
-		
-		if (0 === flowLines[0].length) flowLines.shift();
+	
+		if (flowLines.length > 0 && 0 === flowLines[0].length) flowLines.shift();
 	}	
+	} catch(e)
+	{
+		console.log(e.stack);
+	}
 	console.log("determine flow paragraph using Brava logic");
 	
 	//Transform the bounding box
@@ -1103,7 +1115,7 @@ export const transformTextPoints = (context, br_text, text) => {
 	else 
 		mtx = multiplyMatrices(groupMatrix, translate(rect.x, rect.y));
 	
-	console.log("mtx:" + mtx[0]+ " "+ mtx[1]+ " "+ mtx[2]+ " "+ mtx[3]+ " "+ mtx[4]+ " "+ mtx[5]);
+	//console.log("mtx:" + mtx[0]+ " "+ mtx[1]+ " "+ mtx[2]+ " "+ mtx[3]+ " "+ mtx[4]+ " "+ mtx[5]);
 	
 	tfmRect = transformRect(newBox, mtx);
 		
