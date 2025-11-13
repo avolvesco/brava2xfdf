@@ -562,8 +562,8 @@ const processFreeText = async (context, br_text) => {
 	let size = {minX: minX, minY: minY, maxX: maxX, maxY: maxY};
 	const pointsToPixels = (points, dpi = 96) => points * (dpi / 72);
 	const pixelToPoints = (pixels, dpi = 96) => (pixels / dpi) * 72;
-	
-	const getTextMetrics = (lines, ctx, txtWidth, txtHeight) => {
+
+	const getTextMetrics = (lines, svgTextElement, txtWidth, txtHeight) => {
 		var totalWidth = 0, totalHeight = 0; //calculated total width and height of the text
 		var lineWidth = 0, charCount = 0, currentLine = "", scaleFactor = isPuppeteer() ? 0.95: 1;
 		var newLines = []; //the separation of the text into lines that will fit the width and height
@@ -573,14 +573,15 @@ const processFreeText = async (context, br_text) => {
 			
 			//We found a spacer, just add a new line
 			if (line.trim() == "") {
-				metrics = ctx.measureText(line.replace(" ", "H"));
+				svgTextElement.textContent = line;				
+				metrics = svgTextElement.getBBox();
 				lineWidth = metrics.width;
-				totalHeight += metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent;
-				var lineInfo = {text: line.trim(), width: metrics.width * scaleFactor, 
-					height: (metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent) * scaleFactor};
+				totalHeight += metrics.height;
+				var lineInfo = {text: line, width: metrics.width * scaleFactor, 
+					height: metrics.height * scaleFactor};
 				newLines.push(lineInfo);
 				//console.log(lineInfo.text + " width: " + lineInfo.width + " height:" + lineInfo.height);
-				charCount += line.trim().length;
+				charCount += line.length;
 				if (totalWidth < lineWidth) totalWidth = lineWidth;
 				currentLine = "";
 				lineWidth = 0;
@@ -591,7 +592,7 @@ const processFreeText = async (context, br_text) => {
 			
 			//Remove the last words if it is an empty string or just a space
 			for (var i = words.length - 1; i >= 0; i--) {
-				if (words[i].trim() === "")
+				if (words[i] === "")
 					words.pop();
 				else break;
 			}
@@ -600,14 +601,15 @@ const processFreeText = async (context, br_text) => {
 			for (var jdx = 0, jlen = words.length; jdx < jlen; jdx++) {
 				var word = words[jdx];
 				
+				svgTextElement.textContent = currentLine + word;		
 				//Calculate the width and height of the text
-				var metrics = ctx.measureText(word.replace(" ", "H")), addedWord = false;
-				var wordWidth = metrics.width, wordHeight = metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent;
-				var fitLine = txtWidth > (lineWidth + wordWidth) * scaleFactor;
+				var metrics = svgTextElement.getBBox(), addedWord = false;
+				var wordWidth = metrics.width, wordHeight = metrics.height;
+				var fitLine = txtWidth > wordWidth * scaleFactor;
 				
 				//Determine if the word fits the line, just append the word to the current line
 				if (fitLine) {
-					lineWidth += wordWidth;
+					lineWidth = wordWidth;
 					currentLine += word;
 					addedWord = true;
 				} 
@@ -616,13 +618,14 @@ const processFreeText = async (context, br_text) => {
 				else if (word.trim() !== "") {
 					
 					//Update the totalWidth and totalHeight of text
-					metrics = ctx.measureText(currentLine.replace(" ", "H"));					
+					svgTextElement.textContent = currentLine;	
+					metrics = svgTextElement.getBBox();					
 					if (totalWidth < metrics.width) totalWidth = metrics.width;
-					totalHeight += metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent;
+					totalHeight += metrics.height;
 					
-					charCount += currentLine.trim().length;
-					var lineInfo = {text: currentLine.trim(), width: metrics.width * scaleFactor, 
-						height: (metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent) * scaleFactor};
+					charCount += currentLine.length;
+					var lineInfo = {text: currentLine, width: metrics.width * scaleFactor, 
+						height: metrics.height * scaleFactor};
 					newLines.push(lineInfo);
 					//console.log(lineInfo.text + " width: " + lineInfo.width + " height:" + lineInfo.height);
 					currentLine = word;
@@ -633,14 +636,15 @@ const processFreeText = async (context, br_text) => {
 				//If the last word of the line, push the entire line into the newLine array.
 				if (jdx === jlen - 1) {
 					if (!addedWord) currentLine += word;
-					metrics = ctx.measureText(currentLine.replace(" ", "H"));
-					if (totalWidth < metrics.width) 
-						totalWidth = metrics.width;
 					
-					totalHeight += metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent;
-					charCount += currentLine.trim().length;
-					var lineInfo = {text: currentLine.trim(), width: metrics.width * scaleFactor, 
-						height: (metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent) * scaleFactor};
+					svgTextElement.textContent = currentLine;	
+					metrics = svgTextElement.getBBox();		
+					lineWidth = metrics.width;
+					
+					totalHeight += metrics.height;
+					charCount += currentLine.length;
+					var lineInfo = {text: currentLine, width: metrics.width * scaleFactor, 
+						height: (metrics.height) * scaleFactor};
 					newLines.push(lineInfo);
 					//console.log(lineInfo.text + " width: " + lineInfo.width + " height:" + lineInfo.height);
 					if (totalWidth < lineWidth) totalWidth = lineWidth;
@@ -651,73 +655,113 @@ const processFreeText = async (context, br_text) => {
 			}			
 		}
 	
-		return { totalWidth: totalWidth * scaleFactor, totalHeight: totalHeight * scaleFactor, lineCount: newLines.length, charCount: charCount};
-	}
+		return { totalWidth: totalWidth * scaleFactor, totalHeight: totalHeight * scaleFactor, 
+			lineCount: newLines.length, charCount: charCount};
+	};
 	
 	const convertBravaTextMetrics = function (text, fontFace, fontSize, width, height, txtRotation) {
-		let canvas = document.createElement('canvas');
-		let ctx = canvas.getContext('2d');
-		ctx.font = `${fontSize}pt ${fontFace}`;
 		var txtWidth = pointsToPixels(width), txtHeight = pointsToPixels(height);	
+			
+		const svgNS = "http://www.w3.org/2000/svg";
+
+		// Create the main SVG element
+		const svg = document.createElementNS(svgNS, "svg");
+		svg.setAttribute("width", txtWidth);
+		svg.setAttribute("height", txtHeight);
+		svg.setAttribute("viewBox", "0 0 "+txtWidth+" " + txtHeight);
+		svg.style.opacity = "0";
+
+		// Create an SVG shape element, for example, a rectangle
+		const svgText = document.createElementNS(svgNS, "text");
+		svgText.setAttribute("x", "0");
+		svgText.setAttribute("y", txtHeight / 2);
+		svgText.setAttribute("font-size", `${fontSize}pt`);
+		svgText.setAttribute("font-family", `${fontFace}`);
+
+		// Append the rectangle to the SVG element
+		svg.appendChild(svgText);
+		document.body.appendChild(svg);
+
+		
 		//If text is rotated, we need to switch the width and height
+		/*
 		if (txtRotation == 90 || txtRotation == 270) {
 			txtWidth = pointsToPixels(height);
 			txtHeight = pointsToPixels(width);
 		}
-		ctx.textBaseline = 'middle';
-		ctx.textAlign = "left";
+		*/
 		const lines = text.split(/\r\n/);
-		var { totalWidth: totalWidth, totalHeight: totalHeight, lineCount: lineCount } = getTextMetrics(lines, ctx, txtWidth, txtHeight);
-				
+		var { totalWidth: totalWidth, totalHeight: totalHeight, lineCount: lineCount } = getTextMetrics(lines, svgText, txtWidth, txtHeight); 
+		
 		//console.log("Freetext: "+ lines[0]);
 		//The min and max ratio to fill the height of the box
-		var maxRatioThreshold = 0.99, minRatioThreshold = 0.75, correctSize = false, retries = 20;
+		var maxRatioThreshold = 0.98, minRatioThreshold = 0.85, correctSize = false, retries = 20, fontSizes = {};
+			
 		while (!correctSize && retries > 0)
-		{	var scaleFactor = 1;
-			if (totalHeight > txtHeight) 
-				scaleFactor = txtHeight / totalHeight;
-			else if (totalHeight/txtHeight < minRatioThreshold) {
+		{	var scaleFactor = 1, ratioWidth = totalWidth/ txtWidth, ratioHeight = totalHeight / txtHeight,
+			increaseScale = 1 + 1 /fontSize, decreaseScale =  1 - 1/fontSize;
+			
+			if (totalHeight > txtHeight)  {				
+				scaleFactor = 1 / ratioHeight; 
+			} else if (ratioHeight < minRatioThreshold || ratioWidth < minRatioThreshold) {
 				if (totalWidth > txtWidth) 
-					scaleFactor = txtWidth / totalWidth;
-				else if (totalWidth/ txtWidth < minRatioThreshold) {
-					var ratio = Math.max(totalHeight / txtHeight, totalWidth/ txtWidth);
-					scaleFactor = (fontSize + (txtHeight * (minRatioThreshold - ratio)))/ fontSize;
-				}
-				//else 
-				//	scaleFactor = 1.05;			
+					scaleFactor = 1 / ratioWidth; 
+				//Increase the font size if height/width is below the min threshold
+				else 
+					scaleFactor = 1 + (minRatioThreshold -  Math.min(ratioHeight, ratioWidth)); 
 			}
+			else if (ratioWidth > 1) scaleFactor =   1 / ratioWidth; 
 			
-			var newFontSize = fontSize * scaleFactor;
-			console.log("Freetext newFontSize: "+ newFontSize +" fontSize: " + fontSize + " scaleFactor: " + scaleFactor +"  text: " + text);
-			
+			if (Math.abs(1 - scaleFactor) < 0.1) scaleFactor = scaleFactor < 1 ? decreaseScale: increaseScale;			
+			var newFontSize = parseInt(Math.round(fontSize * scaleFactor));			
+			console.log("Freetext newFontSize: "+ newFontSize +" fontSize: " + fontSize + " scaleFactor: " + scaleFactor +"  text: " + text);			
 			console.log("totalHeight/txtHeight: "+ (totalHeight/txtHeight) +" totalWidth/ txtWidth: " + (totalWidth/ txtWidth) + " text: "+ text);
+			var fontSizeInfo = fontSizes[newFontSize+""], cnt = 20;
+			while (fontSizeInfo !== undefined && cnt > 0)
+			{	//If new size is below min threshold, increase font size
+				if (fontSizeInfo.ratioHeight < minRatioThreshold && fontSizeInfo.ratioWidth < minRatioThreshold)
+					newFontSize++;
+				//If new size is above max threshold, decrease font size
+				else if (fontSizeInfo.ratioHeight > maxRatioThreshold || fontSizeInfo.ratioWidth > maxRatioThreshold)
+					newFontSize--;
+				else break;				
+				fontSizeInfo = fontSizes[newFontSize+""];
+				cnt--;
+			}
+			svgText.setAttribute("font-size", `${newFontSize}pt`);
+			svgText.setAttribute("font-family", `${fontFace}`);
 			
-			ctx.font = `${newFontSize}pt ${fontFace}`;			  
-			var metrics = getTextMetrics(lines, ctx, txtWidth, txtHeight);
+			var metrics = getTextMetrics(lines, svgText, txtWidth, txtHeight); //getTextMetrics(lines, ctx, txtWidth, txtHeight);
 			//console.log("totalHeight: " + totalHeight + " txtHeight: " + txtHeight + " totalWidth: " + totalWidth + " txtWidth: " + txtWidth + " lineCount: " + lineCount +  " newLineCount: " +metrics.lineCount );
 			if (parseInt(fontSize) === parseInt(newFontSize))
 				correctSize = true;
 			//If it previously fits in a single line but the new font takes more than 1 line, use the previous font size
-			else if (totalHeight < txtHeight && totalWidth < txtWidth && lineCount == 1 && metrics.lineCount > 1){				
+			else if (totalHeight < txtHeight && totalWidth < txtWidth && lineCount == 1 && metrics.lineCount > 1 && ratioWidth > minRatioThreshold)
+			{				
 				correctSize = true;
 				continue;
 			} 
-			else
-				correctSize = (totalHeight < txtHeight && totalWidth < txtWidth &&
-					(totalHeight/txtHeight > minRatioThreshold || totalWidth/ txtWidth >  minRatioThreshold));		
+							
 			totalWidth = metrics.totalWidth;
 			totalHeight = metrics.totalHeight;
 			lineCount = metrics.lineCount; 
-		
-			fontSize = newFontSize;			
+			ratioWidth = totalWidth/ txtWidth;
+			ratioHeight = totalHeight / txtHeight;
+			if (!correctSize)
+				correctSize = (totalHeight < txtHeight && totalWidth < txtWidth && ratioHeight > minRatioThreshold);	
+			fontSize = newFontSize;		
+			fontSizes[newFontSize+""] = {lineCount: lineCount, ratioWidth: ratioWidth, ratioHeight: ratioHeight};
+			
 			retries--;	
 		}
 
+		svg.parentElement.removeChild(svg);
+
 		//If text is rotated, we need to switch the width and height
 		if (txtRotation == 90 || txtRotation == 270) 
-			return {width: txtHeight, height: txtWidth, fontSize: Math.round(fontSize)+"pt"};
+			return {width: txtHeight, height: txtWidth, fontSize: fontSize+"pt"};
 		else 
-			return {width: txtWidth, height: txtHeight, fontSize: Math.round(fontSize)+"pt"};
+			return {width: txtWidth, height: txtHeight, fontSize: fontSize+"pt"};
 		
 	};
 
@@ -733,10 +777,10 @@ const processFreeText = async (context, br_text) => {
 	
 	//If font is not Arial and Times New Roman, use the Arial font so we can calculate the fontSize correctly
 	if (fontAttr.value !== "Times New Roman") fontAttr.value = "Helvetica";
-	
+
 	let txtMetrics = convertBravaTextMetrics(text, fontAttr.value, bravaFontSize, txtWidth, txtHeight, txtRotation);
 	let fontFace = fontAttr.value.replace(/\s+/g, ""), fontSize = txtMetrics.fontSize.replace("pt", "");
-	
+		
 	//Adjust the size according to the pageRotation
 	switch (context.pageRotationDegree) {
 		case 90:
@@ -748,8 +792,8 @@ const processFreeText = async (context, br_text) => {
 			size.maxY = size.minX + pixelToPoints(txtMetrics.height);
 			break;
 		case 270:
-			size.minX = size.maxX - pixelToPoints(txtMetrics.height);
-			size.minY = size.maxY - pixelToPoints(txtMetrics.width);
+			size.minX = size.maxX - pixelToPoints(txtMetrics.width);
+			size.minY = size.maxY - pixelToPoints(txtMetrics.height);
 			break;
 		case 0:
 			size.maxX = size.minX + pixelToPoints(txtMetrics.width);
