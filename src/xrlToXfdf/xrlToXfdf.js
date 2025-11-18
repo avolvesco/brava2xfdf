@@ -29,6 +29,7 @@ import {
   getRotationRadFromMatrix,
   getNearestRotationDegreeFromRad,
   multiplyMatrices,
+  createSVGNode,
   isPuppeteer,
   transformTextPoints
 } from './utils';
@@ -512,9 +513,10 @@ const processFreeText = async (context, br_text) => {
   }
   
   //Get all the lines in the text annotation
-  var text = "";
+  var text = "", textLines = [];
   var elLines = br_text.querySelectorAll("TextLine");
   for (var idx = 0, len = elLines.length; idx < len; idx++) {
+	textLines.push(elLines[idx].textContent);
 	if (elLines[idx].innerHTML !== "")
 		text += (text === "" ? "" : '\r\n') + elLines[idx].innerHTML;
   }	
@@ -533,8 +535,46 @@ const processFreeText = async (context, br_text) => {
     maxY,
   } = rectPoints;
 
-    //console.log("freetext rectPoints:" + minX +", "+minY+","+maxX+","+maxY +" width: "+ context.pageInfo.width +" height:"+ context.pageInfo.height);
- 	transformTextPoints(context, br_text, text);
+    console.log("freetext rectPoints:" + minX +", "+minY+","+maxX+","+maxY +" width: "+ context.pageInfo.width +" height:"+ context.pageInfo.height+
+	 "matrix: "+ JSON.stringify(matrix) + " textMatrix: " + JSON.stringify(textMatrix));
+	 
+	const pointNodes = br_text.getElementsByTagName('Point');
+	var bravaPoints = [];
+	for(var i = 0, len = pointNodes.length; i < len; i++)
+	{
+		var n = pointNodes[i], xEl = n.getElementsByTagName('x')[0], yEl =  n.getElementsByTagName('y')[0];
+		var x = parseFloat(xEl.textContent, 10), 
+		y = parseFloat(n.getElementsByTagName('y')[0].textContent, 10);
+		bravaPoints.push({ x: x, y: y});
+	} 	
+	
+	var textAttr = {
+		guid: br_text.getAttribute("guid"),
+		isBold: br_text.getAttribute("bold") === "true",
+		isItalic: br_text.getAttribute("italic") === "true",
+		isUnderline: br_text.getAttribute("underline") === "true",		
+		fontface: br_text.getAttribute("font").replace(/\s+/g, ""),
+		fontsize: parseFloat(br_text.getAttribute("fontsize")),
+		bravaPoints: bravaPoints,
+		lines: textLines
+	} 
+		
+	if (textAttr.fontface !== "Times New Roman") textAttr.fontface = "Helvetica";
+	
+ 	var result = transformTextPoints(context, textAttr, text);
+	
+	//Update the Brava text element with calculated points and text rotation
+	for(var i = 0, len = pointNodes.length; i < len; i++)
+	{	var n = pointNodes[i];
+		var xEl = n.getElementsByTagName('x')[0];
+		var yEl = n.getElementsByTagName('y')[0];
+		
+		xEl.textContent = result[textAttr.guid].points[i].x;
+		yEl.textContent = result[textAttr.guid].points[i].y; 	
+	}
+	
+	if (result[textAttr.guid] && result[textAttr.guid].textRotation) 
+		br_text.setAttribute("textRotation", result[textAttr.guid].textRotation);
 	
 	rectPoints = getConvertedPointsFromNode(br_text, {
 		...context,
@@ -547,38 +587,71 @@ const processFreeText = async (context, br_text) => {
 	minY = rectPoints.minY;
 	maxX = rectPoints.maxX;
 	maxY = rectPoints.maxY;
-	 
-
-  const {
-    color: colorAttr,
-    secondarycolor: secondaryColorAttr,
-    font: fontAttr,
-    fontsize: fontsizeAttr,
-    opaque: opaqueAttr,
-  } = br_text.attributes;
+	
+	var skewAngleDegrees = br_text.hasAttribute("textRotation") ? parseFloat(br_text.getAttribute("textRotation")): null;	
+	
+	const {
+		color: colorAttr,
+		secondarycolor: secondaryColorAttr,
+		font: fontAttr,
+		fontsize: fontsizeAttr,
+		opaque: opaqueAttr,
+	} = br_text.attributes;
  
     let fontVal = fontsizeAttr.value;
 
 	let size = {minX: minX, minY: minY, maxX: maxX, maxY: maxY};
 	const pointsToPixels = (points, dpi = 96) => points * (dpi / 72);
 	const pixelToPoints = (pixels, dpi = 96) => (pixels / dpi) * 72;
+	const rotatePoint = (angleRad, x, y) => {
+		return {x: x * Math.cos(angleRad) - y * Math.sin(angleRad), y: x * Math.sin(angleRad) + y * Math.cos(angleRad) };
+	};
 
 	const getTextMetrics = (lines, svgTextElement, txtWidth, txtHeight) => {
 		var totalWidth = 0, totalHeight = 0; //calculated total width and height of the text
-		var lineWidth = 0, charCount = 0, currentLine = "", scaleFactor = isPuppeteer() ? 0.95: 1;
+		var lineWidth = 0, charCount = 0, currentLine = "";
 		var newLines = []; //the separation of the text into lines that will fit the width and height
-					
+		var wordWidth = 0, wordHeight = 0, 
+		//Make the width and height bigger than it is when text is rotated to make sure it fits the bounding box
+		rotateScale = 1.08; 
+		
+		//In puppeteer, the size of the text is a bit smaller, so we add a scale factor to adjust the resulting size.
+		var scaleFactor = isPuppeteer() ? 1.05: 1;
+				
+		//var textRotationRad = skewAngleDegrees !== null? (skewAngleDegrees + context.pageRotationDegree) * Math.PI / 180: null;
+		var textRotationRad = skewAngleDegrees !== null? (skewAngleDegrees + context.pageRotationDegree) : null;		
 		for (var idx = 0, ilen = lines.length; idx < ilen; idx++) {
 			var line = lines[idx];
 			
 			//We found a spacer, just add a new line
 			if (line.trim() == "") {
-				svgTextElement.textContent = line;				
+							
+				svgTextElement.textContent = " ";	
+				
+				if (textRotationRad !== null)
+					svgTextElement.setAttribute("transform", "rotate(" + textRotationRad + ")");
+				else
+					svgTextElement.removeAttribute("transform");
 				metrics = svgTextElement.getBBox();
-				lineWidth = metrics.width;
-				totalHeight += metrics.height;
-				var lineInfo = {text: line, width: metrics.width * scaleFactor, 
-					height: metrics.height * scaleFactor};
+				wordWidth = metrics.width * scaleFactor;
+				wordHeight = metrics.height * scaleFactor;
+								
+				if (textRotationRad !== null)
+				{
+					var w = wordWidth * rotateScale, h = wordHeight * rotateScale;
+					if (txtWidth > txtHeight && w > h)
+					{ 
+						wordWidth = w;
+						wordHeight = h;
+					} else {
+						wordWidth = h;
+						wordHeight = w;
+					}
+				}
+				
+				lineWidth = wordWidth;
+				totalHeight += wordHeight;
+				var lineInfo = {text: line, width: wordWidth, height: wordHeight};
 				newLines.push(lineInfo);
 				//console.log(lineInfo.text + " width: " + lineInfo.width + " height:" + lineInfo.height);
 				charCount += line.length;
@@ -588,7 +661,7 @@ const processFreeText = async (context, br_text) => {
 				continue;
 			}
 				
-			var words = line.split(/(\s+)/);
+			var words = line.split(/(\s+)/), addAll = false;
 			
 			//Remove the last words if it is an empty string or just a space
 			for (var i = words.length - 1; i >= 0; i--) {
@@ -596,36 +669,77 @@ const processFreeText = async (context, br_text) => {
 					words.pop();
 				else break;
 			}
-			
-			
+						
 			for (var jdx = 0, jlen = words.length; jdx < jlen; jdx++) {
 				var word = words[jdx];
 				
-				svgTextElement.textContent = currentLine + word;		
-				//Calculate the width and height of the text
-				var metrics = svgTextElement.getBBox(), addedWord = false;
-				var wordWidth = metrics.width, wordHeight = metrics.height;
-				var fitLine = txtWidth > wordWidth * scaleFactor;
+				var addedWord = false;				
+				svgTextElement.textContent = currentLine + word;	
+				if (textRotationRad !== null)
+					svgTextElement.setAttribute("transform", "rotate(" + textRotationRad + ")");
+				else
+					svgTextElement.removeAttribute("transform");
+				
+				metrics = svgTextElement.getBBox();	
+				wordWidth = metrics.width * scaleFactor;
+				wordHeight = metrics.height * scaleFactor;
+								
+				if (textRotationRad !== null)
+				{
+					var w = wordWidth * rotateScale, h = wordHeight * rotateScale;
+					if (txtWidth > txtHeight && w > h)
+					{ 
+						wordWidth = w;
+						wordHeight = h;
+					} else {
+						wordWidth = h;
+						wordHeight = w;
+					}
+
+				}
+				var fitLine = txtWidth > wordWidth;
+				
+				//The entire text will not fit so just add all text in the line
+				if (!fitLine && word !== "" && currentLine === "") addAll = true;
 				
 				//Determine if the word fits the line, just append the word to the current line
-				if (fitLine) {
+				if (fitLine || addAll) {
 					lineWidth = wordWidth;
 					currentLine += word;
 					addedWord = true;
 				} 
-				
 				//If the non-space word no longer fits the line, add it as a new line
-				else if (word.trim() !== "") {
+				else if (word !== "") {
 					
 					//Update the totalWidth and totalHeight of text
-					svgTextElement.textContent = currentLine;	
-					metrics = svgTextElement.getBBox();					
-					if (totalWidth < metrics.width) totalWidth = metrics.width;
-					totalHeight += metrics.height;
+					svgTextElement.textContent = currentLine;					
+					if (textRotationRad !== null)
+						svgTextElement.setAttribute("transform", "rotate(" + textRotationRad + ")");					
+					else
+						svgTextElement.removeAttribute("transform");				
+					
+					metrics = svgTextElement.getBBox();	
+					wordWidth = metrics.width * scaleFactor;
+					wordHeight = metrics.height * scaleFactor;
+									
+					if (textRotationRad !== null)
+					{
+						var w = wordWidth * rotateScale, h = wordHeight * rotateScale;
+						if (txtWidth > txtHeight && w > h)
+						{ 
+							wordWidth = w;
+							wordHeight = h;
+						} else {
+							wordWidth = h;
+							wordHeight = w;
+						}
+					}
+				
+					if (totalWidth < wordWidth) totalWidth = wordWidth;
+					totalHeight += wordHeight;
 					
 					charCount += currentLine.length;
-					var lineInfo = {text: currentLine, width: metrics.width * scaleFactor, 
-						height: metrics.height * scaleFactor};
+					var lineInfo = {text: currentLine, width: wordWidth, height: wordHeight};
 					newLines.push(lineInfo);
 					//console.log(lineInfo.text + " width: " + lineInfo.width + " height:" + lineInfo.height);
 					currentLine = word;
@@ -633,18 +747,39 @@ const processFreeText = async (context, br_text) => {
 					addedWord = true;
 				}
 				
+				
 				//If the last word of the line, push the entire line into the newLine array.
 				if (jdx === jlen - 1) {
 					if (!addedWord) currentLine += word;
 					
-					svgTextElement.textContent = currentLine;	
-					metrics = svgTextElement.getBBox();		
-					lineWidth = metrics.width;
+					svgTextElement.textContent = currentLine;
+					if (textRotationRad !== null)
+						svgTextElement.setAttribute("transform", "rotate(" + textRotationRad + ")");					
+					else
+						svgTextElement.removeAttribute("transform");
 					
-					totalHeight += metrics.height;
+					metrics = svgTextElement.getBBox();		
+					wordWidth = metrics.width * scaleFactor;
+					wordHeight = metrics.height * scaleFactor;
+						
+					if (textRotationRad !== null)
+					{
+						var w = wordWidth * rotateScale, h = wordHeight * rotateScale;
+						if (txtWidth > txtHeight && w > h)
+						{ 
+							wordWidth = w;
+							wordHeight = h;
+						} else {
+							wordWidth = h;
+							wordHeight = w;
+						}
+					}
+					
+					lineWidth = wordWidth;
+					
+					totalHeight += wordHeight;
 					charCount += currentLine.length;
-					var lineInfo = {text: currentLine, width: metrics.width * scaleFactor, 
-						height: (metrics.height) * scaleFactor};
+					var lineInfo = {text: currentLine, width: wordWidth, height: wordHeight};
 					newLines.push(lineInfo);
 					//console.log(lineInfo.text + " width: " + lineInfo.width + " height:" + lineInfo.height);
 					if (totalWidth < lineWidth) totalWidth = lineWidth;
@@ -655,33 +790,23 @@ const processFreeText = async (context, br_text) => {
 			}			
 		}
 	
-		return { totalWidth: totalWidth * scaleFactor, totalHeight: totalHeight * scaleFactor, 
-			lineCount: newLines.length, charCount: charCount};
+		return { totalWidth: totalWidth, totalHeight: totalHeight, textLines: newLines, charCount: charCount};
 	};
 	
 	const convertBravaTextMetrics = function (text, fontFace, fontSize, width, height, txtRotation) {
 		var txtWidth = pointsToPixels(width), txtHeight = pointsToPixels(height);	
-			
-		const svgNS = "http://www.w3.org/2000/svg";
-
+	
 		// Create the main SVG element
-		const svg = document.createElementNS(svgNS, "svg");
-		svg.setAttribute("width", txtWidth);
-		svg.setAttribute("height", txtHeight);
-		svg.setAttribute("viewBox", "0 0 "+txtWidth+" " + txtHeight);
+		const svg = createSVGNode("svg", {"width": txtWidth, "height": txtHeight, "viewBox": "0 0 " + txtWidth + " " + txtHeight});
 		svg.style.opacity = "0";
-
+		
 		// Create an SVG shape element, for example, a rectangle
-		const svgText = document.createElementNS(svgNS, "text");
-		svgText.setAttribute("x", "0");
-		svgText.setAttribute("y", txtHeight / 2);
-		svgText.setAttribute("font-size", `${fontSize}pt`);
-		svgText.setAttribute("font-family", `${fontFace}`);
-
+		const svgText = createSVGNode("text", {"x": "0", "y": txtHeight / 2, "font-size":  `${fontSize}pt`, "font-family": `${fontFace}`});
+				
 		// Append the rectangle to the SVG element
 		svg.appendChild(svgText);
+		
 		document.body.appendChild(svg);
-
 		
 		//If text is rotated, we need to switch the width and height
 		/*
@@ -691,11 +816,11 @@ const processFreeText = async (context, br_text) => {
 		}
 		*/
 		const lines = text.split(/\r\n/);
-		var { totalWidth: totalWidth, totalHeight: totalHeight, lineCount: lineCount } = getTextMetrics(lines, svgText, txtWidth, txtHeight); 
+		var { totalWidth: totalWidth, totalHeight: totalHeight, textLines: textLines } = getTextMetrics(lines, svgText, txtWidth, txtHeight); 
 		
-		//console.log("Freetext: "+ lines[0]);
 		//The min and max ratio to fill the height of the box
-		var maxRatioThreshold = 0.98, minRatioThreshold = 0.85, correctSize = false, retries = 20, fontSizes = {};
+		var maxRatioThreshold = 0.97, minRatioThreshold = 0.85, correctSize = false, retries = 20, fontSizes = {},
+			lineCount = textLines.length;
 			
 		while (!correctSize && retries > 0)
 		{	var scaleFactor = 1, ratioWidth = totalWidth/ txtWidth, ratioHeight = totalHeight / txtHeight,
@@ -714,8 +839,8 @@ const processFreeText = async (context, br_text) => {
 			
 			if (Math.abs(1 - scaleFactor) < 0.1) scaleFactor = scaleFactor < 1 ? decreaseScale: increaseScale;			
 			var newFontSize = parseInt(Math.round(fontSize * scaleFactor));			
-			console.log("Freetext newFontSize: "+ newFontSize +" fontSize: " + fontSize + " scaleFactor: " + scaleFactor +"  text: " + text);			
-			console.log("totalHeight/txtHeight: "+ (totalHeight/txtHeight) +" totalWidth/ txtWidth: " + (totalWidth/ txtWidth) + " text: "+ text);
+			//console.log("Freetext newFontSize: "+ newFontSize +" fontSize: " + fontSize + " scaleFactor: " + scaleFactor +"  text: " + text);			
+			//console.log("totalHeight/txtHeight: "+ (totalHeight/txtHeight) +" totalWidth/ txtWidth: " + (totalWidth/ txtWidth) + " text: "+ text);
 			var fontSizeInfo = fontSizes[newFontSize+""], cnt = 20;
 			while (fontSizeInfo !== undefined && cnt > 0)
 			{	//If new size is below min threshold, increase font size
@@ -731,12 +856,11 @@ const processFreeText = async (context, br_text) => {
 			svgText.setAttribute("font-size", `${newFontSize}pt`);
 			svgText.setAttribute("font-family", `${fontFace}`);
 			
-			var metrics = getTextMetrics(lines, svgText, txtWidth, txtHeight); //getTextMetrics(lines, ctx, txtWidth, txtHeight);
-			//console.log("totalHeight: " + totalHeight + " txtHeight: " + txtHeight + " totalWidth: " + totalWidth + " txtWidth: " + txtWidth + " lineCount: " + lineCount +  " newLineCount: " +metrics.lineCount );
+			var metrics = getTextMetrics(lines, svgText, txtWidth, txtHeight);
 			if (parseInt(fontSize) === parseInt(newFontSize))
 				correctSize = true;
 			//If it previously fits in a single line but the new font takes more than 1 line, use the previous font size
-			else if (totalHeight < txtHeight && totalWidth < txtWidth && lineCount == 1 && metrics.lineCount > 1 && ratioWidth > minRatioThreshold)
+			else if (totalHeight < txtHeight && totalWidth < txtWidth && lineCount == 1 && metrics.textLines.length > 1 && ratioWidth > minRatioThreshold)
 			{				
 				correctSize = true;
 				continue;
@@ -744,11 +868,12 @@ const processFreeText = async (context, br_text) => {
 							
 			totalWidth = metrics.totalWidth;
 			totalHeight = metrics.totalHeight;
-			lineCount = metrics.lineCount; 
+			lineCount = metrics.textLines.length; 
 			ratioWidth = totalWidth/ txtWidth;
 			ratioHeight = totalHeight / txtHeight;
 			if (!correctSize)
-				correctSize = (totalHeight < txtHeight && totalWidth < txtWidth && ratioHeight > minRatioThreshold);	
+				correctSize = (totalHeight < txtHeight && totalWidth < txtWidth && ratioHeight > minRatioThreshold
+					&& ratioHeight < maxRatioThreshold);	
 			fontSize = newFontSize;		
 			fontSizes[newFontSize+""] = {lineCount: lineCount, ratioWidth: ratioWidth, ratioHeight: ratioHeight};
 			
@@ -764,22 +889,22 @@ const processFreeText = async (context, br_text) => {
 			return {width: txtWidth, height: txtHeight, fontSize: fontSize+"pt"};
 		
 	};
-
+	
 	//Get the font size adjusted to a scale factor
 	var bravaFontSize = parseFloat(fontVal) * 83 / 0.5; //Math.floor(parseFloat(fontVal) / 0.0352778 * 8);
 	var txtWidth = size.maxX - size.minX , txtHeight = size.maxY - size.minY;
 	var txtRotation = Math.abs(rotationDegree - context.pageRotationDegree); 
-	console.log("txtRotation:"+txtRotation);
 	if (context.pageRotationDegree == 90 || context.pageRotationDegree == 270) {
 		txtHeight = size.maxX - size.minX;
 		txtWidth = size.maxY - size.minY;
 	}
 	
 	//If font is not Arial and Times New Roman, use the Arial font so we can calculate the fontSize correctly
-	if (fontAttr.value !== "Times New Roman") fontAttr.value = "Helvetica";
-
-	let txtMetrics = convertBravaTextMetrics(text, fontAttr.value, bravaFontSize, txtWidth, txtHeight, txtRotation);
-	let fontFace = fontAttr.value.replace(/\s+/g, ""), fontSize = txtMetrics.fontSize.replace("pt", "");
+	var fontFace = fontAttr.value;
+	if (fontFace !== "Times New Roman") fontFace = "Helvetica";
+	
+	let txtMetrics = convertBravaTextMetrics(text, fontFace, bravaFontSize, txtWidth, txtHeight, txtRotation);
+	let fontSize = txtMetrics.fontSize.replace("pt", "");
 		
 	//Adjust the size according to the pageRotation
 	switch (context.pageRotationDegree) {
@@ -800,14 +925,14 @@ const processFreeText = async (context, br_text) => {
 			size.maxY = size.minY + pixelToPoints(txtMetrics.height);
 			break;
 	}
-	//console.log("txtMetrics.width:"+txtMetrics.width +" txtMetrics.height:" + txtMetrics.height +" context.pageRotationDegree: "+context.pageRotationDegree);
 	
 	return {
 		rect: size,
 		bravaFontSize: parseFloat(fontVal),
 		fontSize: parseInt(txtMetrics.fontSize.replace("px", "")),
-		fontFace: fontAttr.value.replace(/\s+/g, ""),
+		fontFace: fontFace.replace(/\s+/g, ""),
 		rotationDegree: rotationDegree,
+		textRotation: skewAngleDegrees,
 		br_node: br_text
 	}
 };
@@ -853,7 +978,7 @@ const createFreeTextNode = async (context, br_text) => {
   
   const index = parseInt(br_text.getAttribute("index")), info = freeTextInfos[index],
     size = info.rect, bravaFontProp = info["fontFace"]+"|" + info["bravaFontSize"], fontSize = context.bravaFonts[bravaFontProp], 
-	fontFace = info["fontFace"];
+	fontFace = info["fontFace"], annotRotation = info["textRotation"] !== null? info["textRotation"] : context.pageRotationDegree;
 
 	const xfdf_freetext = outXfdfDoc.createElement('freetext');
 		  
@@ -873,7 +998,7 @@ const createFreeTextNode = async (context, br_text) => {
 		TextColor: `#${rgbToHex(...colorAttr.value.split('|'))}`,
 		FontSize: fontSize, //Use the font size we got from the calculation	 
 		width: "0", // border always applied. So, set it to zero by default.
-		rotation: context.pageInfo.dataType === "stamp"? info["rotationDegree"]: context.pageRotationDegree  //Set appropriate rotation in the Freetext element
+		rotation: context.pageInfo.dataType === "stamp"? info["rotationDegree"]: annotRotation  //Set appropriate rotation in the Freetext element
 	  };
 
 	  if (opaqueAttr.value === 'secondarycolor') {
@@ -922,13 +1047,13 @@ const createFreeTextNode = async (context, br_text) => {
 
 	  switch (textAlignment) {
 		case 'L':
-		  xfdf_defaultstyleNode.textContent = `font: '${fontAttr.value}' ${fontSize}px; text-align: left;`; //Include the font face and size to the default style
+		  xfdf_defaultstyleNode.textContent = `font: '${fontFace}' ${fontSize}px; text-align: left;`; //Include the font face and size to the default style
 		  break;
 		case 'R':
-		  xfdf_defaultstyleNode.textContent = `font: '${fontAttr.value}' ${fontSize}px; text-align: right;`; //Include the font face and size to the default style
+		  xfdf_defaultstyleNode.textContent = `font: '${fontFace}' ${fontSize}px; text-align: right;`; //Include the font face and size to the default style
 		  break;
 		default:
-		  xfdf_defaultstyleNode.textContent = `font: '${fontAttr.value}' ${fontSize}px; text-align: center;`; //Include the font face and size to the default style
+		  xfdf_defaultstyleNode.textContent = `font: '${fontFace}' ${fontSize}px; text-align: center;`; //Include the font face and size to the default style
 		  break;
 	  }
 	  xfdf_defaultstyleNode.textContent += ' text-vertical-align: top;';
@@ -2099,7 +2224,7 @@ const processAnnot = (br_annot, context, topContext, bookmarks) => {
 		if (isPuppeteer())
 			console.error(`Encountered error when trying to convert node: ${br_annot.nodeName}\n${error.stack}\n`, error);
 		else
-				console.error(`Encountered error when trying to convert node: ${br_annot.nodeName}\n`, error);
+			console.error(`Encountered error when trying to convert node: ${br_annot.nodeName}\n`, error);
 
       return null;
     });
