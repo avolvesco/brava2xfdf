@@ -1081,6 +1081,7 @@ export const transformTextPoints = (context, topContext, textAttr, text, br_text
 				svgNode.removeChild(svgTxtNode);
 				let fitWidth = bbox.width <= lineWidth;
 				//if (ctx.measureText(line + t).width * scaleFactor <= lineWidth)
+				if (fitWidth)
 				{
 					line += t;
 					if ("" === line && flowLines.length > 0 && "" === flowLines[flowLines.length - 1]) k = true;
