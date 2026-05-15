@@ -384,6 +384,11 @@ const decToHex = (num) => {
   return hex;
 };
 
+export const toSvgTextContent = (line) => {
+	//Use _ for empty lines so that we don't get a 0 for the height of getBBox of SVG text
+	return line.trim() === ""? "_": line;
+};
+
 export const rgbToHex = (r, g, b) => {
   const red = decToHex(r);
   const green = decToHex(g);
@@ -825,7 +830,7 @@ export const isPuppeteer = () => {
 	return navigator.userAgent.indexOf("HeadlessChrome") > -1;
 }	
 
-export const transformTextPoints = (context, textAttr, text, bravaGroupMatrix) => {
+export const transformTextPoints = (context, topContext, textAttr, text, br_textGroup) => {
 	const { 
 		bravaHeight,
 		bravaWidth,
@@ -864,16 +869,31 @@ export const transformTextPoints = (context, textAttr, text, bravaGroupMatrix) =
 	svgNode.appendChild(svgFirstGrpNode);
 	
 	var svgGrpNode = createSVGNode("g");	
-	if (bravaGroupMatrix !== null) {
-	
+	if (br_textGroup !== null) {
+		let bravaGroupMatrix = br_textGroup.querySelector('Matrix').textContent.split('|').map((n) => parseFloat(n, 10));
 		var svgBravaGrpNode = createSVGNode("g", {
 			"transform": getTransformFromMatrix(bravaGroupMatrix)
 		});
 		svgFirstGrpNode.appendChild(svgBravaGrpNode);
 		svgBravaGrpNode.appendChild(svgGrpNode);
+		
+			
+		let stampEls = br_textGroup.querySelectorAll('Elements Raster');
+		for(var i = 0, len = stampEls.length; i < len; i++)
+		{
+			const imageMatrix = stampEls[i].querySelector('Matrix').textContent.split('|').map(n => parseFloat(n, 10)),
+				br_idTextNode = Array.from(stampEls[i].childNodes).filter(a => a.nodeType === Node.TEXT_NODE), 
+				imageId = br_idTextNode[0].textContent.replace(/^\s+|\s+$/g, ''),
+				imageInfo = topContext.bravaImages[imageId];
+			
+			const imageEl = createSVGNode("image", {"fill-opacity": "0", "stroke": "none", "stroke-opacity":"0", "stroke-width":"1", "stroke-linecap": "butt", "stroke-linejoin": "miter", 		
+				"stroke-miterlimit":"4", "x":"0", "y":"0", "width": imageInfo.imageWidth, "height": imageInfo.imageHeight, "preserveAspectRatio": "none", "href": imageInfo.imageData});
+			svgGrpNode.appendChild(imageEl);
+		}
+			
 	}
 	else 		
-		svgFirstGrpNode.appendChild(svgGrpNode);
+		svgFirstGrpNode.appendChild(svgGrpNode);	
 	
 	const svgRectNode = createSVGNode("rect", {
 		"fill":"rgb(255, 255, 255)", "fill-opacity":"1", "stroke":"rgb(255, 0, 0)", "stroke-opacity":"1", "stroke-width":"1", "stroke-linecap":"butt", 
@@ -948,12 +968,12 @@ export const transformTextPoints = (context, textAttr, text, bravaGroupMatrix) =
 		
 		//Get the size of the text on default font-size
 		var svgTxtNode = createSVGNode("text", {
-			"fill":"rgb(255, 0, 0)", "fill-opacity":"1", "stroke":"none", "stroke-opacity":"0", "stroke-width":"1", "stroke-linecap":"butt", "stroke-linejoin":"miter", 
+			"fill":"rgb(255, 0, 0)", "fill-opacity":"1", "stroke":"none", "stroke-opacity":"0", "stroke-width":"1", "stroke-linecap":"butt", "stroke-linejoin":"miter", "xml:space": "preserve",
 			"stroke-miterlimit":"4" ,"x":"0", "y": "0", "text-anchor":"start", "text-decoration": (isUnderline? "underline": "none"),
 			"rotate":"0", "kerning":"auto", "text-rendering":"auto", "fill-rule":"evenodd", "font-style": (isItalic ? "italic":"none"),
 			"font-variant":"normal", "font-weight": (isBold? "bold":"normal"),  "font-size": defaultFontSize, "font-family": fontface
 		});
-		svgTxtNode.textContent = line.trim() === "" ? "_": line;
+		svgTxtNode.textContent = toSvgTextContent(line);
 		svgNode.appendChild(svgTxtNode);				
 		var bbox = svgTxtNode.getBBox();
 		svgNode.removeChild(svgTxtNode);
@@ -1054,18 +1074,17 @@ export const transformTextPoints = (context, textAttr, text, bravaGroupMatrix) =
 			for (var c = words.length; c > 0;  c--) {
 				var t = words.shift();
 				
-				let svgTxtNode = createSVGNode("text", {"font-size": "24px", "font-family": fontface }), txt = line + t;
-				svgTxtNode.textContent =  txt.trim() === "" ? "_": txt;			
+				let svgTxtNode = createSVGNode("text", {"font-size": "24px", "font-family": fontface, "xml:space": "preserve" }), txt = line + t;
+				svgTxtNode.textContent = toSvgTextContent(txt);			
 				svgNode.appendChild(svgTxtNode);
 				var bbox = svgTxtNode.getBBox();
 				svgNode.removeChild(svgTxtNode);
-				
+				let fitWidth = bbox.width <= lineWidth;
 				//if (ctx.measureText(line + t).width * scaleFactor <= lineWidth)
-				if (bbox.width <= lineWidth)
 				{
 					line += t;
 					if ("" === line && flowLines.length > 0 && "" === flowLines[flowLines.length - 1]) k = true;
-				} else if ("" !== line) {					
+				} else {					
 					//Create a new text element for the line and append it to the SVG Node. Then get the appropriate bounds of the text element
 					var shape = createTextNode(svgTextGrpNode, line, firstLineY - linePosY);	
 					if (lineHeight === 0) lineHeight = shape.bbox.height;
@@ -1076,21 +1095,20 @@ export const transformTextPoints = (context, textAttr, text, bravaGroupMatrix) =
 		
 					flowLines.push(line);
 					line = t + " ";
-				} else if (0 === words.length){
-					line = t;
-				}
+				} 
+				
+				if ( !fitWidth && 0 === words.length) line = t;
+				
 			}
+					
+			//Create a new text element for the line and append it to the SVG Node. Then get the appropriate bounds of the text element
+			var shape = createTextNode(svgTextGrpNode, line, firstLineY - linePosY);	
+			if (lineHeight === 0) lineHeight = shape.bbox.height;
+			origBox = calculateTextGroupRect(shape, origBox);
+			lineShapes.push(shape);
+			linePosY += 0.9 * lineHeight;
 		
-			if ("" !== line) {				
-				//Create a new text element for the line and append it to the SVG Node. Then get the appropriate bounds of the text element
-				var shape = createTextNode(svgTextGrpNode, line, firstLineY - linePosY);	
-				if (lineHeight === 0) lineHeight = shape.bbox.height;
-				origBox = calculateTextGroupRect(shape, origBox);
-				lineShapes.push(shape);
-				linePosY += 0.9 * lineHeight;
-			
-				flowLines.push(line);
-			}			
+			flowLines.push(line);						
 		}
 					
 		if (origBox !== null) {

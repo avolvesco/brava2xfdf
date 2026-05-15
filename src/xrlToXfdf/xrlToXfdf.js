@@ -20,6 +20,7 @@ import {
   getAxisScaleFactor,
   getScaleFromRatio,
   getImageDimensions,
+  toSvgTextContent,
   rgbToHex,
   setXfdfAttributes,
   setXfdfAttributes2,
@@ -477,7 +478,7 @@ const createLine = async (context, br_line, headType = '') => {
   return xfdf_line;
 };
 
-const processFreeText = async (context, br_text) => {
+const processFreeText = async (context, topContext, br_text) => {
   const {
     pageIndex,
     pageConversion,
@@ -495,7 +496,11 @@ const processFreeText = async (context, br_text) => {
 
   // Check if there are any Matrix elements
   const matrixNodes = br_text.getElementsByTagName('Matrix');
-
+  const canvas = document.createElement('canvas'),
+	ctx = canvas.getContext('2d');
+	ctx.textBaseline = "top";
+	ctx.textAlign = "left";
+    
   let textMatrix;
 
   if (matrixNodes.length === 0) {
@@ -513,13 +518,13 @@ const processFreeText = async (context, br_text) => {
   }
 
 	//Handle Brava Group element of the text
-	let parentEl = br_text.parentElement, groupMatrix = null, tokens = {};
+	let parentEl = br_text.parentElement, br_textGroup = null, tokens = {};
 	while (["author", "group"].indexOf(parentEl.tagName.toLowerCase()) == -1) 		
 		parentEl = parentEl.parentElement;
 	
 	let tagName = parentEl.tagName.toLowerCase();
 	if (tagName === "group") {
-		groupMatrix = parentEl.querySelector('Matrix').textContent.split('|').map((n) => parseFloat(n, 10));
+		br_textGroup = parentEl;		
 		let tokenEls = parentEl.querySelectorAll('TokenList TokenSet');
 		for(var i = 0, len = tokenEls.length; i < len; i++)
 		{
@@ -582,7 +587,7 @@ const processFreeText = async (context, br_text) => {
 	var skewAngleDegrees = br_text.hasAttribute("textRotation") ? parseFloat(br_text.getAttribute("textRotation")): null,
 		textRotationRad = skewAngleDegrees !== null? (skewAngleDegrees + context.pageRotationDegree) : null;		
 	if (textAttr.fontface !== "Times New Roman") textAttr.fontface = "Helvetica";
- 	var result = transformTextPoints(context, textAttr, text, groupMatrix, textRotationRad), text = "";
+ 	var result = transformTextPoints(context, topContext, textAttr, text, br_textGroup), text = "";
 	for (var idx = 0, len = result[textAttr.guid].textFlow.length; idx < len; idx++) {	
 		let line = result[textAttr.guid].textFlow[idx];
 		text += (text === "" ? "" : '\r\n') + line;		
@@ -644,7 +649,7 @@ const processFreeText = async (context, br_text) => {
 	}else if(context.pageRotationDegree === 90)
 	{	
 		newMinX = info.left / info.pageWidth * context.pageInfo.width;
-		newMaxX = (info.left + info.width)/ info.pageHeight * context.pageInfo.width;	
+		newMaxX = (info.left + info.width)/ info.pageWidth * context.pageInfo.width;	
 		newMinY = info.top / info.pageHeight * context.pageInfo.height
 		newMaxY = (info.top + info.height)/ info.pageHeight * context.pageInfo.height;			
 			
@@ -687,16 +692,16 @@ const processFreeText = async (context, br_text) => {
 		let getLineMetrics = (line) => {
 			//Make the width and height bigger than it is when text is rotated to make sure it fits the bounding box
 			const rotateScale = 1.08; 
-			svgTextElement.textContent = currentLine.trim() === ""? "_": currentLine;					
+			svgTextElement.textContent = toSvgTextContent(line);					
 			if (textRotationRad !== null)
 				svgTextElement.setAttribute("transform", "rotate(" + textRotationRad + ")");					
 			else
 				svgTextElement.removeAttribute("transform");	
-					
+			 
 			let metrics = svgTextElement.getBBox();		
 			width = metrics.width * scaleFactor;
 			height = metrics.height * scaleFactor;
-			svgTextElement.textContent = currentLine;				
+			svgTextElement.textContent = line;				
 						
 			if (textRotationRad !== null){				
 				let w = width * rotateScale, h = height * rotateScale;
@@ -806,7 +811,7 @@ const processFreeText = async (context, br_text) => {
 			}
 			
 		}
-	
+		
 		return { totalWidth: totalWidth, totalHeight: totalHeight, textLines: newLines, charCount: charCount};
 	};
 	
@@ -814,11 +819,11 @@ const processFreeText = async (context, br_text) => {
 		var txtWidth = pointsToPixels(width), txtHeight = pointsToPixels(height);	
 	
 		// Create the main SVG element
-		const svg = createSVGNode("svg", {"width": txtWidth, "height": txtHeight, "viewBox": "0 0 " + txtWidth + " " + txtHeight});
+		const svg = createSVGNode("svg", { "width": txtWidth, "height": txtHeight, "viewBox": "0 0 " + txtWidth + " " + txtHeight});
 		svg.style.opacity = "0";
 		
 		// Create an SVG shape element, for example, a rectangle
-		const svgText = createSVGNode("text", {"x": "0", "y": txtHeight / 2, "font-size":  `${fontSize}pt`, "font-family": `${fontFace}`});
+		const svgText = createSVGNode("text", {"xml:space": "preserve", "x": "0", "y": txtHeight / 2, "font-size":  `${fontSize}pt`, "font-family": `${fontFace}`});
 				
 		// Append the rectangle to the SVG element
 		svg.appendChild(svgText);
@@ -836,7 +841,7 @@ const processFreeText = async (context, br_text) => {
 		var { totalWidth: totalWidth, totalHeight: totalHeight, textLines: textLines } = getTextMetrics(lines, svgText, txtWidth, txtHeight); 
 		
 		//The min and max ratio to fill the height of the box
-		var maxRatioThreshold = 0.97, minRatioThreshold = 0.85, correctSize = false, retries = 20, fontSizes = {},
+		var maxRatioThreshold = 1.1, minRatioThreshold = 0.85, correctSize = false, retries = 20, fontSizes = {},
 			lineCount = textLines.length;
 			
 		while (!correctSize && retries > 0)
@@ -898,9 +903,9 @@ const processFreeText = async (context, br_text) => {
 		svg.parentElement.removeChild(svg);
 
 		//If text is rotated, we need to switch the width and height
-		if (txtRotation == 90 || txtRotation == 270) 
-			return {width: txtHeight, height: txtWidth, fontSize: fontSize+"pt"};
-		else 
+		//if (txtRotation == 90 || txtRotation == 270) 
+		//	return {width: txtHeight, height: txtWidth, fontSize: fontSize+"pt"};
+		//else 
 			return {width: txtWidth, height: txtHeight, fontSize: fontSize+"pt"};
 		
 	};
@@ -923,26 +928,24 @@ const processFreeText = async (context, br_text) => {
 	let fontSize = txtMetrics.fontSize.replace("pt", "");
 		
 	//Adjust the size according to the pageRotation
-	/*
 	switch (context.pageRotationDegree) {
 		case 90:
-			size.maxX = size.minX + pixelToPoints(txtMetrics.height);
-			size.maxY = size.minY + pixelToPoints(txtMetrics.width);
+			size.maxX = size.minX + pixelToPoints(txtMetrics.height)
+			//size.maxY = size.minY + pixelToPoints(txtMetrics.width);
 			break;
 		case 180:
-			size.maxX = size.minY + pixelToPoints(txtMetrics.width);
+			//size.maxX = size.minY + pixelToPoints(txtMetrics.width);
 			size.maxY = size.minX + pixelToPoints(txtMetrics.height);
 			break;
 		case 270:
-			size.minX = size.maxX - pixelToPoints(txtMetrics.width);
-			size.minY = size.maxY - pixelToPoints(txtMetrics.height);
+			//size.minY = size.maxY - pixelToPoints(txtMetrics.width);
+			size.minX = size.maxX - pixelToPoints(txtMetrics.height);
 			break;
 		case 0:
-			size.maxX = size.minX + pixelToPoints(txtMetrics.width);
-			size.maxY = size.minY + pixelToPoints(txtMetrics.height);
+			//size.maxX = size.minX + pixelToPoints(txtMetrics.width);
+			size.minY = size.maxY - pixelToPoints(txtMetrics.height);
 			break;
 	}
-	*/		
 	
 	return {
 		rect: size,
@@ -1195,21 +1198,24 @@ const createSignature = async (context, br_signature, instance) => {
   return xfdf_stampNode;
 };
 
-const createStampNode = async (context, br_raster, isChangeView = false, ocgLayers) => {
+const createStampNode = async (context, topContext, br_raster, isChangeView = false, ocgLayers) => {
   const { pageIndex, outXfdfDoc, inXrlDoc, authorName } = context;
 
   if (isChangeView === false) {
-    const br_idTextNode = find(br_raster.childNodes, { nodeType: Node.TEXT_NODE });
-    const br_foundImageNode = inXrlDoc.querySelector(`Image[guid="${br_idTextNode.textContent.replace(/^\s+|\s+$/g, '')}"]`);
+    const br_idTextNode = find(br_raster.childNodes, { nodeType: Node.TEXT_NODE }),
+		imageId = br_idTextNode.textContent.replace(/^\s+|\s+$/g, ''),
+		imageInfo = topContext.bravaImages[imageId];
+	
     const [br_matrixNode] = br_raster.getElementsByTagName('Matrix');
 
     const imageMatrix = br_matrixNode.textContent.split('|').map(n => parseFloat(n, 10));
-    const imageData = `data:${'image/png'};base64,${br_foundImageNode.textContent.replace(/=+$/, '')}`;
+    const br_foundImageNode = inXrlDoc.querySelector(`Image[guid="${br_idTextNode.textContent.replace(/^\s+|\s+$/g, '')}"]`);
+    /*const imageData = `data:${'image/png'};base64,${br_foundImageNode.textContent.replace(/=+$/, '')}`;
     const { width: imageWidth, height: imageHeight } = await getImageDimensions(imageData);
-
+	*/
     const points = [
       { x: 0, y: 0 }, // bottom-left point
-      { x: imageWidth, y: imageHeight }, // top-right point
+      { x: imageInfo.imageWidth, y: imageInfo.imageHeight }, // top-right point
     ];
     const { rectPoints, rotationDegree } = getConvertedPoints(points, {
       ...context,
@@ -1232,7 +1238,8 @@ const createStampNode = async (context, br_raster, isChangeView = false, ocgLaye
         rect: `${minX},${minY},${maxX},${maxY}`,
         title: authorName,
         subject: 'Stamp',
-        rotation: rotationDegree,
+        //rotation: rotationDegree,
+		rotation: context.pageRotationDegree, //Set rotation to the page rotation in the Stamp element since the image will be at 0 degrees		
       },
       br_raster.attributes,
       xfdf_stampNode,
@@ -1240,7 +1247,7 @@ const createStampNode = async (context, br_raster, isChangeView = false, ocgLaye
     );
     const xfdf_imageDataNode = outXfdfDoc.createElement('imagedata');
     // TODO: Get encoding?
-    xfdf_imageDataNode.textContent = imageData;
+    xfdf_imageDataNode.textContent = imageInfo.imageData;
     xfdf_stampNode.appendChild(xfdf_imageDataNode);
 
     return xfdf_stampNode;
@@ -2175,7 +2182,7 @@ const processAnnot = (br_annot, context, topContext, bookmarks) => {
   } else if (br_annot.nodeName === 'Text') {    
 	nodePromise = createFreeTextNode(context, br_annot);
   } else if (br_annot.nodeName === 'Raster') {
-    nodePromise = createStampNode(context, br_annot);
+    nodePromise = createStampNode(context, topContext, br_annot);
   } else if (br_annot.nodeName === 'Line') {
     nodePromise = createLine(context, br_annot);
   } else if (br_annot.nodeName === 'ArrowLine') {
@@ -2202,7 +2209,7 @@ const processAnnot = (br_annot, context, topContext, bookmarks) => {
     nodePromise = createSignature(context, br_annot);
   } else if (br_annot.nodeName === 'Changemark') {
     // This was changed to create ChangeView annotations.
-    nodePromise = createStampNode(context, br_annot, true, ocgLayersGlobal);
+    nodePromise = createStampNode(context, topContext, br_annot, true, ocgLayersGlobal);
   } else if (br_annot.nodeName === 'ChangemarkReply') {
     nodePromise = createChangemarkReply(context, br_annot);
   } else if (br_annot.nodeName === 'Blockout') {
@@ -2295,7 +2302,7 @@ const processNodes = (br_annots, groupContext = {}, topContext = {}, bookmarks =
 	//Calculate rect and fontsize of the freetext
 	if (br_annot.nodeName === 'Text')
 	{
-		let freetextPromise = processFreeText(context, br_annot);
+		let freetextPromise = processFreeText(context, topContext, br_annot);
 		context.freeTextPromises.push(freetextPromise);
 	}
 
@@ -2350,9 +2357,24 @@ const xrlToXfdf = async (inputXrlStr, pageInfos, extension, freeTextJustificatio
   const br_pageList = inXrlDoc.getElementsByTagName('PageList')[0];
   const br_pageListNodes = (br_pageList && br_pageList.childNodes) || [];
   const br_pages = filter(br_pageListNodes, { nodeName: 'Page' });
-  const nodePromises = [];
+  const nodePromises = [], imagePromises = [];
   const bookmarks = {};
-
+  let bravaImages = {};
+  //Extract the images data  
+  const getImageData = async (br_foundImageNode) => {
+	  const imageData = `data:${br_foundImageNode.getAttribute("mimetype")};base64,${br_foundImageNode.textContent.replace(/=+$/, '')}`;			 
+	  const { width: imageWidth, height: imageHeight } = await getImageDimensions(imageData);		
+	  bravaImages[br_foundImageNode.getAttribute("guid")] = {imageData: imageData, imageWidth: imageWidth, imageHeight: imageHeight};
+			
+  };
+  let imageEls = inXrlDoc.querySelectorAll(`ImageList Image`);
+  for(let i = 0, len = imageEls.length; i < len; i++)		
+  {
+	  let imgPromise = getImageData(imageEls[i])
+	  imagePromises.push(imgPromise);
+  }
+  
+  await Promise.all(imagePromises);
 
   const pageInfoZero = pageInfos[0];
   if (!pageInfoZero) {
@@ -2388,7 +2410,8 @@ const xrlToXfdf = async (inputXrlStr, pageInfos, extension, freeTextJustificatio
     const bravaWidth = right - left;
     const bravaHeight = top - bottom;
     const pageConversion = { x: bravaWidth / width, y: bravaHeight / height, pageIndex };
-
+	
+	
     const br_authorList = br_pageNode.getElementsByTagName('AuthorList')[0];
     const br_authors = br_authorList.getElementsByTagName('Author');
 
@@ -2414,8 +2437,10 @@ const xrlToXfdf = async (inputXrlStr, pageInfos, extension, freeTextJustificatio
 	  pageInfo: pageInfo,
 	  freeTextPromises: [],
 	  freeTextInfos: [],
-	  bravaFonts: {}
+	  bravaFonts: {},
+	  bravaImages: bravaImages
     };
+
 
     forEach(br_authors, async (br_author) => {
       const authorName = getAttributeValue(br_author, 'name');
