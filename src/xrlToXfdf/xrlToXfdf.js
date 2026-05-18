@@ -672,7 +672,7 @@ const processFreeText = async (context, topContext, br_text) => {
 	}
 	
 	//In puppeteer, the size of the text is a bit smaller, so we add a scale factor to adjust the resulting size.
-	const scaleFactor = isPuppeteer() ? 1.90: 1;
+	const scaleFactor = isPuppeteer() ? 1.20: 1;
 		
 	const pointsToPixels = (points, dpi = 96) => points * (dpi / 72);
 	const pixelToPoints = (pixels, dpi = 96) => (pixels / dpi) * 72;
@@ -815,7 +815,7 @@ const processFreeText = async (context, topContext, br_text) => {
 		return { totalWidth: totalWidth, totalHeight: totalHeight, textLines: newLines, charCount: charCount};
 	};
 	
-	const convertBravaTextMetrics = function (lines, fontFace, fontSize, width, height, txtRotation) {
+	const convertBravaTextMetrics = function (lines, fontFace, fontSize, width, height, txtRotation, maxRatioThreshold, minRatioThreshold) {
 		var txtWidth = pointsToPixels(width), txtHeight = pointsToPixels(height);	
 	
 		// Create the main SVG element
@@ -841,8 +841,7 @@ const processFreeText = async (context, topContext, br_text) => {
 		var { totalWidth: totalWidth, totalHeight: totalHeight, textLines: textLines } = getTextMetrics(lines, svgText, txtWidth, txtHeight); 
 		
 		//The min and max ratio to fill the height of the box
-		var maxRatioThreshold = 1.1, minRatioThreshold = 0.85, correctSize = false, retries = 20, fontSizes = {},
-			lineCount = textLines.length;
+		var correctSize = false, retries = 20, fontSizes = {}, lineCount = textLines.length;
 			
 		while (!correctSize && retries > 0)
 		{	var scaleFactor = 1, ratioWidth = totalWidth/ txtWidth, ratioHeight = totalHeight / txtHeight,
@@ -850,12 +849,12 @@ const processFreeText = async (context, topContext, br_text) => {
 			
 			if (totalHeight > txtHeight)  {				
 				scaleFactor = 1 / ratioHeight; 
-			} else if (ratioHeight < minRatioThreshold || ratioWidth < minRatioThreshold) {
+			} else if (ratioHeight < minRatioThreshold.height || ratioWidth < minRatioThreshold.width) {
 				if (totalWidth > txtWidth) 
 					scaleFactor = 1 / ratioWidth; 
 				//Increase the font size if height/width is below the min threshold
 				else 
-					scaleFactor = 1 + (minRatioThreshold -  Math.min(ratioHeight, ratioWidth)); 
+					scaleFactor = 1 + (minRatioThreshold.height -  Math.min(ratioHeight, ratioWidth)); 
 			}
 			else if (ratioWidth > 1) scaleFactor =   1 / ratioWidth; 
 			
@@ -864,10 +863,10 @@ const processFreeText = async (context, topContext, br_text) => {
 			var fontSizeInfo = fontSizes[newFontSize+""], cnt = 20;
 			while (fontSizeInfo !== undefined && cnt > 0)
 			{	//If new size is below min threshold, increase font size
-				if (fontSizeInfo.ratioHeight < minRatioThreshold && fontSizeInfo.ratioWidth < minRatioThreshold)
+				if (fontSizeInfo.ratioHeight < minRatioThreshold.height && fontSizeInfo.ratioWidth < minRatioThreshold.width)
 					newFontSize++;
 				//If new size is above max threshold, decrease font size
-				else if (fontSizeInfo.ratioHeight > maxRatioThreshold || fontSizeInfo.ratioWidth > maxRatioThreshold)
+				else if (fontSizeInfo.ratioHeight > maxRatioThreshold.height || fontSizeInfo.ratioWidth > maxRatioThreshold.width)
 					newFontSize--;
 				else break;				
 				fontSizeInfo = fontSizes[newFontSize+""];
@@ -877,10 +876,10 @@ const processFreeText = async (context, topContext, br_text) => {
 			svgText.setAttribute("font-family", `${fontFace}`);
 			
 			var metrics = getTextMetrics(lines, svgText, txtWidth, txtHeight);
-			if (parseInt(fontSize) === parseInt(newFontSize))
+			if (parseInt(fontSize) === parseInt(newFontSize) && totalHeight < txtHeight && totalWidth < txtWidth && ratioHeight < maxRatioThreshold.height)
 				correctSize = true;
 			//If it previously fits in a single line but the new font takes more than 1 line, use the previous font size
-			else if (totalHeight < txtHeight && totalWidth < txtWidth && lineCount == 1 && metrics.textLines.length > 1 && ratioWidth > minRatioThreshold)
+			else if (totalHeight < txtHeight && totalWidth < txtWidth && lineCount == 1 && metrics.textLines.length > 1 && ratioWidth > minRatioThreshold.width)
 			{				
 				correctSize = true;
 				continue;
@@ -892,8 +891,8 @@ const processFreeText = async (context, topContext, br_text) => {
 			ratioWidth = totalWidth/ txtWidth;
 			ratioHeight = totalHeight / txtHeight;
 			if (!correctSize)
-				correctSize = (totalHeight < txtHeight && totalWidth < txtWidth && ratioHeight > minRatioThreshold
-					&& ratioHeight < maxRatioThreshold);	
+				correctSize = (totalHeight < txtHeight && totalWidth < txtWidth && ratioHeight > minRatioThreshold.height
+					&& ratioHeight < maxRatioThreshold.height);	
 			fontSize = newFontSize;		
 			fontSizes[newFontSize+""] = {lineCount: lineCount, ratioWidth: ratioWidth, ratioHeight: ratioHeight};
 			
@@ -924,8 +923,11 @@ const processFreeText = async (context, topContext, br_text) => {
 	if (fontFace !== "Times New Roman") fontFace = "Helvetica";
 	
 	console.log(info.textFlow[0]+" textWidthRatio:"+ info.textWidthRatio+" textHeightRatio:"+ info.textHeightRatio);
-	let txtMetrics = convertBravaTextMetrics(info.textFlow, fontFace, bravaFontSize, txtWidth * info.textWidthRatio * scaleFactor, txtHeight * info.textHeightRatio * scaleFactor, txtRotation);
+	let maxRatioThreshold = { height: info.textHeightRatio < 0.75 ? 1.1 : 0.97, width: info.textWidthRatio < 0.75 ? 1.1 : 0.97}, 
+		minRatioThreshold = {width: 0.85, height: 0.85};
+	let txtMetrics = convertBravaTextMetrics(info.textFlow, fontFace, bravaFontSize, txtWidth * info.textWidthRatio * scaleFactor, txtHeight * info.textHeightRatio * scaleFactor, txtRotation, maxRatioThreshold, minRatioThreshold);
 	let fontSize = txtMetrics.fontSize.replace("pt", "");
+	console.log( "height: " + txtMetrics.height +" size: "+ size.minX+"," + size.minY+","+ size.maxX+","+size.maxY +" context.pageRotationDegree: "+ context.pageRotationDegree);
 		
 	//Adjust the size according to the pageRotation
 	switch (context.pageRotationDegree) {
@@ -949,7 +951,7 @@ const processFreeText = async (context, topContext, br_text) => {
 	
 	return {
 		rect: size,
-		textFlow: info.textFlow,
+		textFlow: info.textFlow.filter(a => a !== ""),
 		bravaFontSize: parseFloat(fontVal),
 		fontSize: parseInt(txtMetrics.fontSize.replace("px", "")),
 		fontFace: fontFace.replace(/\s+/g, ""),

@@ -938,8 +938,7 @@ export const transformTextPoints = (context, topContext, textAttr, text, br_text
     var n = 0.25 * charWidth;
 	var m = 0.1 * charWidth;
 	var lineWidth = width * (24 / (0.9 * bravaFontSize));
- 
-	
+ 	
 	const getBoundingBox = (origbbox, bravaFontSize, posY) => {
 	
 		var bboxWidth = origbbox.width,
