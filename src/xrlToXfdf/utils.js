@@ -1078,8 +1078,7 @@ export const transformTextPoints = (context, topContext, textAttr, text, br_text
 				svgNode.appendChild(svgTxtNode);
 				var bbox = svgTxtNode.getBBox();
 				svgNode.removeChild(svgTxtNode);
-				let fitWidth = bbox.width <= lineWidth;
-				//if (ctx.measureText(line + t).width * scaleFactor <= lineWidth)
+				let fitWidth = ctx.measureText(txt).width < lineWidth; //bbox.width <= lineWidth;				 
 				if (fitWidth)
 				{
 					line += t;
@@ -1122,7 +1121,7 @@ export const transformTextPoints = (context, topContext, textAttr, text, br_text
 	{
 		console.log(e.stack);
 	}
-	
+	ctx.font = bravaFontSize + "px '" + fontface + "'";				
 	//Transform the bounding box
 	var rect = { x: -n - m, y: -m - height - n, width: 2 * n + width + 4 * m, height:  2 * m + height + m };
 	var newBox = { x: 0, y: 0, width: width, height: height };

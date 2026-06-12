@@ -539,10 +539,12 @@ const processFreeText = async (context, topContext, br_text) => {
   for (var idx = 0, len = elLines.length; idx < len; idx++) {
 	let line = elLines[idx].textContent;	
 	if (line !== "") {
-		//Handle Brava tokens in freeText
-		for(let propName in tokens)
-			line = line.replaceAll("%"+propName, tokens[propName]);			
-			
+		//Replace Brava tokens in freeText for Markup Conversions but not for Stamp Conversions
+		if (context.pageInfo.dataType === "markup")
+		{
+			for(let propName in tokens)
+				line = line.replaceAll("%"+propName, tokens[propName]);			
+		}
 		text += (text === "" ? "" : '\r\n') + line;
 	}
 	textLines.push(line);
@@ -646,7 +648,8 @@ const processFreeText = async (context, topContext, br_text) => {
 		size.maxX = Math.max(newMinX, newMaxX);		
 		size.minY = Math.min(newMinY, newMaxY);
 		size.maxY = Math.max(newMinY, newMaxY);
-	}else if(context.pageRotationDegree === 90)
+	}
+	else if(context.pageRotationDegree === 90)
 	{	
 		newMinX = info.left / info.pageWidth * context.pageInfo.width;
 		newMaxX = (info.left + info.width)/ info.pageWidth * context.pageInfo.width;	
@@ -675,7 +678,7 @@ const processFreeText = async (context, topContext, br_text) => {
 	const scaleFactor = isPuppeteer() ? 1.20: 1;
 		
 	const pointsToPixels = (points, dpi = 96) => points * (dpi / 72);
-	const pixelToPoints = (pixels, dpi = 96) => (pixels / dpi) * 72;
+	const pixelToPoints = (pixels, dpi = 96) => pixels * (72/ dpi);
 	const rotatePoint = (angleRad, x, y) => {
 		return {x: x * Math.cos(angleRad) - y * Math.sin(angleRad), y: x * Math.sin(angleRad) + y * Math.cos(angleRad) };
 	};
@@ -698,6 +701,7 @@ const processFreeText = async (context, topContext, br_text) => {
 			else
 				svgTextElement.removeAttribute("transform");	
 			 
+	
 			let metrics = svgTextElement.getBBox();		
 			width = metrics.width * scaleFactor;
 			height = metrics.height * scaleFactor;
@@ -817,7 +821,7 @@ const processFreeText = async (context, topContext, br_text) => {
 	
 	const convertBravaTextMetrics = function (lines, fontFace, fontSize, width, height, txtRotation, maxRatioThreshold, minRatioThreshold) {
 		var txtWidth = pointsToPixels(width), txtHeight = pointsToPixels(height);	
-	
+		
 		// Create the main SVG element
 		const svg = createSVGNode("svg", { "width": txtWidth, "height": txtHeight, "viewBox": "0 0 " + txtWidth + " " + txtHeight});
 		svg.style.opacity = "0";
@@ -829,7 +833,8 @@ const processFreeText = async (context, topContext, br_text) => {
 		svg.appendChild(svgText);
 		
 		document.body.appendChild(svg);
-		
+		svgText.setAttribute("xml:space", "preserve");			
+			
 		//If text is rotated, we need to switch the width and height
 		/*
 		if (txtRotation == 90 || txtRotation == 270) {
@@ -951,7 +956,7 @@ const processFreeText = async (context, topContext, br_text) => {
 	
 	return {
 		rect: size,
-		textFlow: info.textFlow.filter(a => a !== ""),
+		textFlow: info.textFlow,
 		bravaFontSize: parseFloat(fontVal),
 		fontSize: parseInt(txtMetrics.fontSize.replace("px", "")),
 		fontFace: fontFace.replace(/\s+/g, ""),
@@ -1065,19 +1070,19 @@ const createFreeTextNode = async (context, br_text) => {
 	  colorAttr.value.split('|').forEach((v) => {
 		defaultAppearanceText = `${defaultAppearanceText}${(parseInt(v, 10) / 255)} `;
 	  });
-	  defaultAppearanceText += `rg /${fontFace} ${fontSize}px Tf`;  //Include the font face and size to the default appearance  
+	  defaultAppearanceText += `rg /${fontFace} ${fontSize} Tf`;  //Include the font face and size to the default appearance  
 	  xfdf_defaultappearanceNode.textContent = defaultAppearanceText;
 	  const xfdf_defaultstyleNode = outXfdfDoc.createElement('defaultstyle');
 
 	  switch (textAlignment) {
 		case 'L':
-		  xfdf_defaultstyleNode.textContent = `font: '${fontFace}' ${fontSize}px; text-align: left;`; //Include the font face and size to the default style
+		  xfdf_defaultstyleNode.textContent = `font: '${fontFace}' ${fontSize}pt; text-align: left;`; //Include the font face and size to the default style
 		  break;
 		case 'R':
-		  xfdf_defaultstyleNode.textContent = `font: '${fontFace}' ${fontSize}px; text-align: right;`; //Include the font face and size to the default style
+		  xfdf_defaultstyleNode.textContent = `font: '${fontFace}' ${fontSize}pt; text-align: right;`; //Include the font face and size to the default style
 		  break;
 		default:
-		  xfdf_defaultstyleNode.textContent = `font: '${fontFace}' ${fontSize}px; text-align: center;`; //Include the font face and size to the default style
+		  xfdf_defaultstyleNode.textContent = `font: '${fontFace}' ${fontSize}pt; text-align: center;`; //Include the font face and size to the default style
 		  break;
 	  }
 	  xfdf_defaultstyleNode.textContent += ' text-vertical-align: top;';
