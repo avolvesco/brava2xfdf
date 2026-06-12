@@ -700,7 +700,6 @@ const processFreeText = async (context, topContext, br_text) => {
 				svgTextElement.setAttribute("transform", "rotate(" + textRotationRad + ")");					
 			else
 				svgTextElement.removeAttribute("transform");	
-			 
 	
 			let metrics = svgTextElement.getBBox();		
 			width = metrics.width * scaleFactor;
