@@ -2274,7 +2274,7 @@ const processNodes = (br_annots, groupContext = {}, topContext = {}, bookmarks =
   const rotationMatrices = {
     0: [1, 0, 0, 1, 0, 0],
     90: [0, 1, -1, 0, bravaHeight, 0], // 270 degrees
-    180: [-1, 0, 0, -1, bravaHeight, bravaWidth], // 180 degrees
+    180: [-1, 0, 0, -1, bravaWidth, bravaHeight], // 180 degrees
     270: [0, -1, 1, 0, 0, bravaWidth], // 90 degrees
   };
 
