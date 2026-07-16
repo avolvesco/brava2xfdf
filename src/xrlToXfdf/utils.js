@@ -876,10 +876,11 @@ export const getImagePosition = (context, imageInfo, imageMatrix) => {
 	// Calculate the rotation angle in degrees using trigonometry
 	const ctmMatx = imageNode.getCTM(); 
 	const rotationAngle = Math.round(Math.atan2(ctmMatx.b, ctmMatx.a) * (180 / Math.PI));
-	const bounds = imageNode.getBoundingClientRect();
+	const bounds = imageNode.getBoundingClientRect(),
+		svgBounds = svgNode.getBoundingClientRect();
 	svgNode.ownerDocument.body.removeChild(svgNode);	
-	const ratioWidth = context.pageInfo.width / naturalPageWidth,	
-		ratioHeight = context.pageInfo.height / naturalPageHeight;
+	const ratioWidth = context.pageInfo.width / svgBounds.width,	
+		ratioHeight = context.pageInfo.height / svgBounds.height;
 	let size = {minX: bounds.left, minY: bounds.top, maxX: bounds.right, maxY: bounds.bottom},
 		newMinX = 0, newMaxX = 0, newMinY = 0, newMaxY = 0;
 	if(context.pageRotationDegree === 0)
@@ -920,8 +921,8 @@ export const getImagePosition = (context, imageInfo, imageMatrix) => {
 	}
 	else if(context.pageRotationDegree === 270)
 	{	
-		newMinX = size.minX * ratioWidth;
-		newMaxX = size.maxX * ratioWidth;
+		newMinX = context.pageInfo.width - size.minX * ratioWidth;
+		newMaxX = context.pageInfo.width - size.maxX * ratioWidth;
 		newMinY = context.pageInfo.height - (size.minY * ratioHeight);
 		newMaxY = context.pageInfo.height - (size.maxY * ratioHeight) ;			
 
