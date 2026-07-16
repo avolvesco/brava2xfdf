@@ -770,7 +770,7 @@ const scaleAt = (b, m, l, h) => {
 	
 };
 
-const multiplyRectangle = (m, rect) => {
+export const multiplyRectangle = (m, rect) => {
 	
 	var h = multiplyPoint(m, rect.x, rect.y)
 	  , g = multiplyPoint(m, rect.x, rect.y + rect.height)
@@ -798,10 +798,185 @@ const multiplyPoint = (m, x, y) => {
 	};
 };
 
+const invertMatrix = (m) => {
+    const [a, b, c, d, h, v] = m;
+
+    const det = a * d - b * c;
+
+    if (det === 0) {
+        throw new Error("Matrix is not invertible");
+    }
+
+    return [
+         d / det,
+        -b / det,
+        -c / det,
+         a / det,
+        (b * v - d * h) / det,
+        (c * h - a * v) / det
+    ];
+}
+
 const getDistance = (pt1, pt2) => {
 	    return Math.sqrt(Math.pow(Math.abs(pt2.x - pt1.x), 2) + Math.pow(Math.abs(pt2.y - pt1.y), 2))
                     
 };
+
+const rotatePointOnCenter = (angleInRadians, point, center) => {
+	return {
+		x: Math.cos(angleInRadians) * (point.x - center.x) - Math.sin(angleInRadians) * (point.y - center.y) + center.x, 
+		y: Math.sin(angleInRadians) * (point.x - center.x) + Math.cos(angleInRadians) * (point.y - center.y)  + center.y
+	}
+};
+
+const degreesToRadians = (degree) => { return degree * Math.PI / 180; }; 
+
+export const getImagePosition = (context, imageInfo, imageMatrix) => {
+	
+	const { 
+		bravaHeight,
+		bravaWidth,
+		pageRotationDegree,
+		matrix,
+	} = context;
+		
+	var naturalPageHeight = 1440;
+	var naturalPageWidth = naturalPageHeight * bravaWidth / bravaHeight;
+	
+	const svgNode = createSVGNode("svg", {"width": naturalPageWidth, "height": naturalPageHeight, "style": "position: absolute; top: 0px; left: 0px; border:1px solid red;"});
+		
+	var pageMtx = multiplyMatrices(scale(naturalPageWidth / bravaWidth, naturalPageHeight / bravaHeight), translate(0, bravaHeight), scale(1, -1), translate(0, 0));
+	
+	var svgFirstGrpNode = createSVGNode("g", {
+		"transform": getTransformFromMatrix(pageMtx)
+	});
+	svgNode.appendChild(svgFirstGrpNode);
+	
+	const imageRotationDegrees = parseInt(Math.atan2(imageMatrix[1], imageMatrix[0]) * 180/Math.PI);	
+
+	let mtx = multiplyMatrices(imageMatrix, scale(1, -1), translate(0, -imageInfo["imageHeight"]));
+		
+	const imageNode = createSVGNode("image", {"fill-opacity":"0", "stroke":"none", "stroke-opacity":"0", "stroke-width":"1", "stroke-linecap":"butt",
+		"xlink:href": imageInfo["imageData"], "stroke-linejoin":"miter", "stroke-miterlimit":"4", "x":"0", "y":"0", "width": imageInfo["imageWidth"],
+		"height":imageInfo["imageHeight"], "preserveAspectRatio": "none", "transform": getTransformFromMatrix(mtx) });
+	var svgGrpNode = createSVGNode("g");	
+	if (context.groupNode !== undefined)
+	{
+		var svgBravaGrpNode = createSVGNode("g", {
+			"transform": getTransformFromMatrix(context.matrix)
+		});
+		svgFirstGrpNode.appendChild(svgBravaGrpNode);
+		svgBravaGrpNode.appendChild(svgGrpNode);	
+	}	
+	else  
+		svgFirstGrpNode.appendChild(svgGrpNode);	
+		
+	svgGrpNode.appendChild(imageNode);
+		
+	// Calculate the rotation angle in degrees using trigonometry
+	const ctmMatx = imageNode.getCTM(); 
+	const rotationAngle = Math.round(Math.atan2(ctmMatx.b, ctmMatx.a) * (180 / Math.PI));
+	const bounds = imageNode.getBoundingClientRect();
+	svgNode.ownerDocument.body.removeChild(svgNode);	
+	const ratioWidth = context.pageInfo.width / naturalPageWidth,	
+		ratioHeight = context.pageInfo.height / naturalPageHeight;
+	let size = {minX: bounds.left, minY: bounds.top, maxX: bounds.right, maxY: bounds.bottom},
+		newMinX = 0, newMaxX = 0, newMinY = 0, newMaxY = 0;
+	if(context.pageRotationDegree === 0)
+	{	
+		newMinX = size.minX  * ratioWidth;
+		newMaxX = size.maxX * ratioWidth;
+		newMinY = context.pageInfo.height - (size.minY * ratioHeight);		
+		newMaxY = context.pageInfo.height - (size.maxY * ratioHeight);
+		
+		size.minX = Math.min(newMinX, newMaxX);
+		size.maxX = Math.max(newMinX, newMaxX);		
+		size.minY = Math.min(newMinY, newMaxY);
+		size.maxY = Math.max(newMinY, newMaxY);
+	}
+	else if(context.pageRotationDegree === 90)
+	{	
+		newMinX = size.minX * ratioWidth;
+		newMaxX = size.maxX * ratioWidth;	
+		newMinY = size.minY * ratioHeight;
+		newMaxY = size.maxY * ratioHeight;			
+			
+		size.minX = Math.min(newMinY, newMaxY);
+		size.maxX = Math.max(newMinY, newMaxY);		
+		size.minY = Math.min(newMinX, newMaxX);
+		size.maxY = Math.max(newMinX, newMaxX);
+	}
+	else if(context.pageRotationDegree === 180)
+	{	
+		newMinX = context.pageInfo.width - (size.minX * ratioWidth);
+		newMaxX = context.pageInfo.width - (size.maxX * ratioWidth);	
+		newMinY = size.minY * ratioHeight;
+		newMaxY = size.maxY * ratioHeight;			
+			
+		size.minX = Math.min(newMinX, newMaxX);
+		size.maxX = Math.max(newMinX, newMaxX);		
+		size.minY = Math.min(newMinY, newMaxY);
+		size.maxY = Math.max(newMinY, newMaxY);
+	}
+	else if(context.pageRotationDegree === 270)
+	{	
+		newMinX = size.minX * ratioWidth;
+		newMaxX = size.maxX * ratioWidth;
+		newMinY = context.pageInfo.height - (size.minY * ratioHeight);
+		newMaxY = context.pageInfo.height - (size.maxY * ratioHeight) ;			
+
+		size.minX = Math.min(newMinY, newMaxY);
+		size.maxX = Math.max(newMinY, newMaxY);
+		size.minY = Math.min(newMinX, newMaxX);
+		size.maxY = Math.max(newMinX, newMaxX);
+	}
+	
+	return {rotationAngle: rotationAngle, rect: size };
+}
+
+export const recalculateTextBounds = (rectBounds, textRotationInDegrees, pageRotationDegree, textWidth, textHeight) => {
+	//Determine the text rect translated to the vertical center and horizontal left of the rectBounds
+	let minX = rectBounds.x1, minY =  rectBounds.y1 + (rectBounds.getHeight() - textHeight) / 2,
+		maxX = minX + textWidth, maxY = minY + textHeight,
+		textBounds =  new Core.Math.Rect(minX, minY, maxX, maxY),
+	
+	//Determine the angle in radians and the center of the rectBounds, textBounds
+		angleInRadians = degreesToRadians(-textRotationInDegrees),
+		rectCenter = {x: rectBounds.getCenter().x, y: rectBounds.getCenter().y },
+		center = { x: textBounds.getCenter().x, y: textBounds.getCenter().y };
+	
+	//Determine the points of the rotated rectBounds and textBounds around the center
+	/*
+	let	pt1 = rotatePointOnCenter(angleInRadians, {x: textBounds.x1, y: textBounds.y1}, center),
+		pt2 = rotatePointOnCenter(angleInRadians, {x: textBounds.x2, y: textBounds.y1}, center),
+		pt3 = rotatePointOnCenter(angleInRadians, {x: textBounds.x2, y: textBounds.y2}, center),
+		pt4 = rotatePointOnCenter(angleInRadians, {x: textBounds.x1, y: textBounds.y2}, center),
+	*/
+	let	ptr1 = rotatePointOnCenter(angleInRadians, {x: rectBounds.x1, y: rectBounds.y1}, rectCenter),
+		ptr2 = rotatePointOnCenter(angleInRadians, {x: rectBounds.x2, y: rectBounds.y1}, rectCenter),
+		ptr3 = rotatePointOnCenter(angleInRadians, {x: rectBounds.x2, y: rectBounds.y2}, rectCenter),
+		ptr4 = rotatePointOnCenter(angleInRadians, {x: rectBounds.x1, y: rectBounds.y2}, rectCenter);
+	/*	
+	minX = Math.min(pt1.x, pt2.x, pt3.x, pt4.x);
+	minY = Math.min(pt1.y, pt2.y, pt3.y, pt4.y);
+	maxX = Math.max(pt1.x, pt2.x, pt3.x, pt4.x);
+	maxY = Math.max(pt1.y, pt2.y, pt3.y, pt4.y);
+	*/	
+	let	minRectX = Math.min(ptr1.x, ptr2.x, ptr3.x, ptr4.x),
+		minRectY = Math.min(ptr1.y, ptr2.y, ptr3.y, ptr4.y),
+		maxRectX = Math.max(ptr1.x, ptr2.x, ptr3.x, ptr4.x),
+		maxRectY = Math.max(ptr1.y, ptr2.y, ptr3.y, ptr4.y),
+		
+		textResult = new Core.Math.Rect(minX, minY, maxX, maxY),
+		rectResult = new Core.Math.Rect(minRectX, minRectY, maxRectX, maxRectY);
+	
+	//Get the resulting rect by getting the average of the rotated textBounds and the rotated rectBounds for each point of the rect
+	let result =  new Core.Math.Rect((textResult.x1 + rectResult.x1)/2, (textResult.y1 + rectResult.y1)/2, 
+		(textResult.x2 + rectResult.x2)/2, (textResult.y2 + rectResult.y2)/2);
+	
+	return rectResult;
+	
+}
 
 export const createSVGNode = (nodeType, attr) => {
 	const namespace = "http://www.w3.org/2000/svg";
@@ -822,22 +997,35 @@ export const createSVGNode = (nodeType, attr) => {
 
 const getTransformFromMatrix = (tranformMatrix) => {
 
-	return "matrix(" + tranformMatrix[0].toFixed(8) + "," + tranformMatrix[1].toFixed(8) + "," + 
-		tranformMatrix[2].toFixed(8) + "," + tranformMatrix[3].toFixed(8) + "," + tranformMatrix[4].toFixed(8) + "," + tranformMatrix[5].toFixed(8) + ")";
+	return "matrix(" + tranformMatrix[0].toFixed(8) + "," + tranformMatrix[2].toFixed(8) + "," + 
+		tranformMatrix[1].toFixed(8) + "," + tranformMatrix[3].toFixed(8) + "," + tranformMatrix[4].toFixed(8) + "," + tranformMatrix[5].toFixed(8) + ")";
 }
+
+export const extractMatrix = (annotEl)=> {
+	let matrixEl = annotEl.querySelector('Matrix');
+	if (matrixEl !== null)
+	{
+		let result = matrixEl.textContent.split('|').map((n) => parseFloat(n, 10)),
+		temp = result[1];		
+		result[1] = result[2];
+		result[2]  = temp;	
+		return result;
+	} else return [1, 0 ,0, 1, 0, 0];
 	
+}
+
 export const isPuppeteer = () => {
 	return navigator.userAgent.indexOf("HeadlessChrome") > -1;
 }	
 
-export const transformTextPoints = (context, topContext, textAttr, text, br_textGroup) => {
+export const transformTextPoints = (context, topContext, textAttr, text) => {
 	const { 
 		bravaHeight,
 		bravaWidth,
 		pageRotationDegree,
 		matrix,  
 	} = context;
-	
+		
 	const {
 		guid,
 		fontface,
@@ -868,29 +1056,17 @@ export const transformTextPoints = (context, topContext, textAttr, text, br_text
 	});
 	svgNode.appendChild(svgFirstGrpNode);
 	
+	let bravaGroupMatrix = null;
+	
 	var svgGrpNode = createSVGNode("g");	
-	if (br_textGroup !== null) {
-		let bravaGroupMatrix = br_textGroup.querySelector('Matrix').textContent.split('|').map((n) => parseFloat(n, 10));
+	if (context.groupNode !== undefined) {
+		bravaGroupMatrix = extractMatrix(context.groupNode);
 		var svgBravaGrpNode = createSVGNode("g", {
 			"transform": getTransformFromMatrix(bravaGroupMatrix)
 		});
 		svgFirstGrpNode.appendChild(svgBravaGrpNode);
 		svgBravaGrpNode.appendChild(svgGrpNode);
-		
-			
-		let stampEls = br_textGroup.querySelectorAll('Elements Raster');
-		for(var i = 0, len = stampEls.length; i < len; i++)
-		{
-			const imageMatrix = stampEls[i].querySelector('Matrix').textContent.split('|').map(n => parseFloat(n, 10)),
-				br_idTextNode = Array.from(stampEls[i].childNodes).filter(a => a.nodeType === Node.TEXT_NODE), 
-				imageId = br_idTextNode[0].textContent.replace(/^\s+|\s+$/g, ''),
-				imageInfo = topContext.bravaImages[imageId];
-			
-			const imageEl = createSVGNode("image", {"fill-opacity": "0", "stroke": "none", "stroke-opacity":"0", "stroke-width":"1", "stroke-linecap": "butt", "stroke-linejoin": "miter", 		
-				"stroke-miterlimit":"4", "x":"0", "y":"0", "width": imageInfo.imageWidth, "height": imageInfo.imageHeight, "preserveAspectRatio": "none", "href": imageInfo.imageData});
-			svgGrpNode.appendChild(imageEl);
-		}
-			
+
 	}
 	else 		
 		svgFirstGrpNode.appendChild(svgGrpNode);	
@@ -918,16 +1094,7 @@ export const transformTextPoints = (context, topContext, textAttr, text, br_text
 	var groupMatrix = multiplyMatrices(mtx, translate(c.x, c.y));	
 	svgGrpNode.setAttribute("transform", getTransformFromMatrix(groupMatrix));
 	var textRotationDegrees = null;
-	if (groupMatrix[1] !== 0 && groupMatrix[2] !== 0) 
-	{		
-		//Calculate the rotation of the text in degrees based on the skew in the matrix
-		//and save the textRotationDegrees for further processing later when we calculate the font size
-		var scalex = groupMatrix[0], skewy = groupMatrix[2],
-		rScale = Math.sqrt(scalex * scalex + skewy * skewy);
-		textRotationDegrees = context.pageRotationDegree - 
-			Math.round(Math.atan2(groupMatrix[1], groupMatrix[0]) * (180 / Math.PI)); //get the angle in degrees	
-	}
-		
+	
 	//Calculate rect size of the text		
 	let canvas = document.createElement('canvas');
 	let ctx = canvas.getContext('2d');
@@ -1168,10 +1335,10 @@ export const transformTextPoints = (context, topContext, textAttr, text, br_text
 	var points = tfmRect2.points;
 	var outsitePoints = tfmRect2.points.filter( pt => pt.y > bravaHeight);
 		
-	let bminX = null, bminY = null, bmaxX = null, bmaxY = null, longestText = null,
+	let bminX = null, bminY = null, bmaxX = null, bmaxY = null,
 		txtHeight = 0, txtWidth = 0, svgBounds = svgNode.getBoundingClientRect(),
 		svgGroupBounds = svgGrpNode.getBoundingClientRect(),
-		svgTextBounds = svgTextGrpNode.getBoundingClientRect(); 
+		svgTextBounds = svgTextGrpNode.getBoundingClientRect(), textRotationScale = null; 
 	
 	for(var i = 0, len = lineShapes.length; i < len; i++)
 	{
@@ -1183,14 +1350,23 @@ export const transformTextPoints = (context, topContext, textAttr, text, br_text
 			bottom = bounds.bottom / svgBounds.height;
 		if (bounds.height > txtHeight) txtHeight = bounds.height;	
 		if (bounds.width > txtWidth) txtWidth = bounds.width;	
+		//const rotationMtx =  multiplyMatrices(context.matrix, mtx);
+		//const rotationDegrees = Math.atan2(rotationMtx[1], rotationMtx[0]) * 180/Math.PI;
 		
-		
+		// Calculate the rotation angle in degrees using trigonometry
+		const matrix = svgTextGrpNode.getCTM(); 
+		const textAngle = Math.round(Math.atan2(matrix.b, matrix.a) * (180 / Math.PI));
+
+		if (textAngle !== 0)  {
+			textRotationDegrees = textAngle; 
+		}
+				
 		//Convert the SVG coordinates to Brava Page coordinates
 		left = (left * bravaWidth) - textMatrix[4];
 		right = (right * bravaWidth) - textMatrix[4];
 		top = bravaHeight - ((top * bravaHeight) + textMatrix[5]);
 		bottom = bravaHeight - ((bottom* bravaHeight) + textMatrix[5]);
-		let minX =  Math.min(left, right), maxX = Math.max(left, right),  minY = Math.min(top, bottom), maxY = Math.min(top, bottom);
+		let minX =  Math.min(left, right), maxX = Math.max(left, right),  minY = Math.min(top, bottom), maxY = Math.max(top, bottom);
 		if (bminX == null || bminX > minX) bminX = minX;
 		if (bminY == null || bminY > minY) bminY = minY;
 		if (bmaxX == null || bmaxX < maxX) bmaxX = maxX;
@@ -1198,17 +1374,19 @@ export const transformTextPoints = (context, topContext, textAttr, text, br_text
 		
 	}
 
-	let newPoints = [{ x: bminX, y: bminY }, { x: bminX + origWidth, y: bminY }, { x: bminX + origWidth, y: bminY + origHeight }, { x: bminX, y:  bminY + origHeight }];
+	//let newPoints = [{ x: bminX, y: bminY }, { x: bminX + origWidth, y: bminY }, { x: bminX + origWidth, y: bminY + origHeight }, { x: bminX, y:  bminY + origHeight }];
+	let newPoints = [{ x: bminX, y: bminY }, { x: bmaxX, y: bminY }, { x: bmaxX, y: bmaxY }, { x: bminX, y:  bmaxY }];
+	
 	
 	var result = {}, groupWidth = svgTextBounds.width, groupHeight = svgTextBounds.height, groupLeft = svgTextBounds.left, groupTop = svgTextBounds.top,
 		heightRatio = svgTextBounds.height/ svgTextBounds.width, textLineHeight = lineShapes[0].node.getBoundingClientRect().height;
 	console.log("--------------");
 	console.log("text: " + flowLines[0]+" annotationSize: "+ svgGroupBounds.width+"," + svgGroupBounds.height + " text Size:" + groupWidth + "," +groupHeight +
 		" textWidthRatio: " + (groupWidth / svgGroupBounds.width) +" textHeightRatio:" + (groupHeight / svgGroupBounds.height) +
-		" lineHeight: " + textLineHeight +" lines:" + lineShapes.length);
+		" lineHeight: " + textLineHeight +" lines:" + lineShapes.length +" textRotation:" + textRotationDegrees);
 
 	result[guid] = { points: newPoints, textRotation: textRotationDegrees, textFlow: flowLines, 
-		left: groupLeft, top: groupTop, width: svgGroupBounds.width, height: svgGroupBounds.height,
+		textBounds: svgTextBounds, groupBounds: svgGroupBounds,
 		pageWidth: svgBounds.width, pageHeight: svgBounds.height, textWidthRatio: Math.min(0.95, groupWidth / svgGroupBounds.width), 
 		textHeightRatio: Math.min(0.95,  groupHeight / svgGroupBounds.height) };
 	

@@ -30,6 +30,10 @@ import {
   getRotationRadFromMatrix,
   getNearestRotationDegreeFromRad,
   multiplyMatrices,
+  multiplyRectangle,
+  getImagePosition,
+  recalculateTextBounds,
+  extractMatrix,
   createSVGNode,
   isPuppeteer,
   transformTextPoints
@@ -339,8 +343,7 @@ const createEllipse = async (context, br_ellipseNode) => {
     pageIndex, outXfdfDoc, authorName, matrix,
   } = context;
 
-  const [br_matrixNode] = br_ellipseNode.getElementsByTagName('Matrix');
-  const ellipseMatrix = br_matrixNode.textContent.split('|').map((n) => parseFloat(n, 10));
+  const ellipseMatrix = extractMatrix(br_ellipseNode);
   const { rectPoints, rotationDegree } = getConvertedPointsFromNode(br_ellipseNode, {
     ...context,
     // This is for grouping.
@@ -479,90 +482,70 @@ const createLine = async (context, br_line, headType = '') => {
 };
 
 const processFreeText = async (context, topContext, br_text) => {
-  const {
-    pageIndex,
-    pageConversion,
-    outXfdfDoc,
-    authorName,
-	bravaWidth,
-    bravaHeight,
-    isImage,
-    wvHeight,
-    outputScale,
-    textAlignment,
-    matrix,
-    DriverInfo,
-  } = context;
+	const {
+		pageIndex,
+		pageConversion,
+		outXfdfDoc,
+		authorName,
+		bravaWidth,
+		bravaHeight,
+		isImage,
+		wvHeight,
+		outputScale,
+		textAlignment,
+		matrix,
+		DriverInfo
+	} = context;
 
-  // Check if there are any Matrix elements
-  const matrixNodes = br_text.getElementsByTagName('Matrix');
-  const canvas = document.createElement('canvas'),
-	ctx = canvas.getContext('2d');
-	ctx.textBaseline = "top";
-	ctx.textAlign = "left";
+	// Check if there are any Matrix elements
+	const canvas = document.createElement('canvas'),
+		ctx = canvas.getContext('2d');
+		ctx.textBaseline = "top";
+		ctx.textAlign = "left";
     
-  let textMatrix;
-
-  if (matrixNodes.length === 0) {
-    // Create a new Matrix element with default value and append to br_text
-    const defaultMatrix = document.createElement('Matrix');
-    defaultMatrix.textContent = '1|0|0|1|0|0';
-    br_text.appendChild(defaultMatrix);
-
-    // Use the default Matrix value
-    textMatrix = [1, 0, 0, 1, 0, 0];
-  } else {
-    // Use the existing Matrix value
-    const br_matrixNode = matrixNodes[0]; // Get the first (and presumably only) Matrix node
-    textMatrix = br_matrixNode.textContent.split('|').map((n) => parseFloat(n, 10));
-  }
+	let textMatrix = extractMatrix(br_text);
 
 	//Handle Brava Group element of the text
-	let parentEl = br_text.parentElement, br_textGroup = null, tokens = {};
-	while (["author", "group"].indexOf(parentEl.tagName.toLowerCase()) == -1) 		
-		parentEl = parentEl.parentElement;
-	
-	let tagName = parentEl.tagName.toLowerCase();
-	if (tagName === "group") {
-		br_textGroup = parentEl;		
-		let tokenEls = parentEl.querySelectorAll('TokenList TokenSet');
+	let tokens = {};
+	if (context.groupNode !== undefined) {
+		//br_textGroup = parentEl;		
+		let tokenEls = context.groupNode.querySelectorAll('TokenList TokenSet');
 		for(var i = 0, len = tokenEls.length; i < len; i++)
 		{
 			tokens[tokenEls[i].getAttribute("token")] = tokenEls[i].getAttribute("answer");
-		}
-		
+		}		
 	}
 
-  //Get all the lines in the text annotation
-  var text = "", textLines = [];
-  var elLines = br_text.querySelectorAll("TextLine");
-  for (var idx = 0, len = elLines.length; idx < len; idx++) {
-	let line = elLines[idx].textContent;	
-	if (line !== "") {
-		//Replace Brava tokens in freeText for Markup Conversions but not for Stamp Conversions
-		if (context.pageInfo.dataType === "markup")
-		{
-			for(let propName in tokens)
-				line = line.replaceAll("%"+propName, tokens[propName]);			
+	//Get all the lines in the text annotation
+	var text = "", textLines = [];
+	var elLines = br_text.querySelectorAll("TextLine");
+	for (var idx = 0, len = elLines.length; idx < len; idx++) {
+		let line = elLines[idx].textContent;	
+		if (line !== "") {
+			//Replace Brava tokens in freeText for Markup Conversions but not for Stamp Conversions
+			if (context.pageInfo.dataType === "markup")
+			{
+				for(let propName in tokens)
+					line = line.replaceAll("%"+propName, tokens[propName]);			
+			}
+			text += (text === "" ? "" : '\r\n') + line;
 		}
-		text += (text === "" ? "" : '\r\n') + line;
-	}
-	textLines.push(line);
-  }	
+		textLines.push(line);
+	}	
 	
-  var { rectPoints, rotationDegree } = getConvertedPointsFromNode(br_text, {
-    ...context,
-    // This is for grouping
-    matrix: multiplyMatrices(matrix, textMatrix),
-    isText: true,
-  });
-  
-  let {
-    minX,
-    minY,
-    maxX,
-    maxY,
-  } = rectPoints;
+	var { rectPoints, rotationDegree } = getConvertedPointsFromNode(br_text, {
+		...context,
+		// This is for grouping
+		matrix: multiplyMatrices(matrix, textMatrix),
+		isText: true,
+	});
+	  
+	let {
+		minX,
+		minY,
+		maxX,
+		maxY,
+	} = rectPoints;
 
 	const pointNodes = br_text.getElementsByTagName('Point');
 	var bravaPoints = [];
@@ -586,41 +569,39 @@ const processFreeText = async (context, topContext, br_text) => {
 		lines: textLines
 	} 
 	
-	var skewAngleDegrees = br_text.hasAttribute("textRotation") ? parseFloat(br_text.getAttribute("textRotation")): null,
-		textRotationRad = skewAngleDegrees !== null? (skewAngleDegrees + context.pageRotationDegree) : null;		
+	var skewAngleDegrees = null, textRotationRad = null; 
+	//br_text.hasAttribute("textRotation") ? parseFloat(br_text.getAttribute("textRotation")): null,
+	//	textRotationRad = skewAngleDegrees !== null? (skewAngleDegrees + context.pageRotationDegree) : null;		
 	if (textAttr.fontface !== "Times New Roman") textAttr.fontface = "Helvetica";
- 	var result = transformTextPoints(context, topContext, textAttr, text, br_textGroup), text = "";
+ 	var result = transformTextPoints(context, topContext, textAttr, text), text = "";
+	if (result[textAttr.guid].textRotation !== null)
+	{
+		skewAngleDegrees = result[textAttr.guid].textRotation;
+	}
 	for (var idx = 0, len = result[textAttr.guid].textFlow.length; idx < len; idx++) {	
 		let line = result[textAttr.guid].textFlow[idx];
 		text += (text === "" ? "" : '\r\n') + line;		
 	}	
 	
-	//Update the Brava text element with calculated points and text rotation	
+	//Update the Brava text element with calculated points and text rotation
+	minX = null, minY = null, maxX = null, maxY = null;
 	for(var i = 0, len = pointNodes.length; i < len; i++)
 	{	var n = pointNodes[i];
 		var xEl = n.getElementsByTagName('x')[0];
 		var yEl = n.getElementsByTagName('y')[0];
-		
-		xEl.textContent = result[textAttr.guid].points[i].x;
-		yEl.textContent = result[textAttr.guid].points[i].y; 	
+		let x = result[textAttr.guid].points[i].x,
+			y = result[textAttr.guid].points[i].y; 
+		xEl.textContent = x;
+		yEl.textContent = y;
+		if (minX == null || minX > x) minX = x;
+		if (minY == null || minY > y) minY = y;
+		if (maxX == null || maxX < x) maxX = x;
+		if (maxY == null || maxY < y) maxY = y;			
 	}
 	
 	if (result[textAttr.guid] && result[textAttr.guid].textRotation) 
 		br_text.setAttribute("textRotation", result[textAttr.guid].textRotation);
-		
-	rectPoints = getConvertedPointsFromNode(br_text, {
-		...context,
-		// This is for grouping
-		matrix: multiplyMatrices(matrix, textMatrix),
-		isText: true,
-	  }).rectPoints;
-	  	 
-	minX = rectPoints.minX;
-	minY = rectPoints.minY;
-	maxX = rectPoints.maxX;
-	maxY = rectPoints.maxY;
-	
-	
+
 	const {
 		color: colorAttr,
 		secondarycolor: secondaryColorAttr,
@@ -634,15 +615,16 @@ const processFreeText = async (context, topContext, br_text) => {
 	let size = {minX: minX, minY: minY, maxX: maxX, maxY: maxY};
 		
 	var info = result[br_text.getAttribute("guid")];	
-	var newMinX = size.minX, newMinY = size.newMinY, newMinY = size.minY, newMaxY = size.maxY;
-	
+	var newMinX = size.minX, newMinY = size.newMinY, newMinY = size.minY, newMaxY = size.maxY,
+		ratioWidth = context.pageInfo.width / info.pageWidth,
+		ratioHeight = context.pageInfo.height / info.pageHeight;
 	//Convert the coordinates from Brava to Apryse
 	if(context.pageRotationDegree === 0)
 	{	
-		newMinX = info.left / info.pageWidth * context.pageInfo.width;
-		newMaxX = (info.left + info.width)/ info.pageWidth * context.pageInfo.width;
-		newMinY = context.pageInfo.height - (info.top / info.pageHeight * context.pageInfo.height);		
-		newMaxY = context.pageInfo.height - (info.top + info.height)/ info.pageHeight * context.pageInfo.height;
+		newMinX = info.groupBounds.left * ratioWidth;
+		newMaxX = (info.groupBounds.left + info.groupBounds.width) * ratioWidth;
+		newMinY = context.pageInfo.height - (info.groupBounds.top * ratioHeight);		
+		newMaxY = context.pageInfo.height - (info.groupBounds.top + info.groupBounds.height) * ratioHeight;
 		
 		size.minX = Math.min(newMinX, newMaxX);
 		size.maxX = Math.max(newMinX, newMaxX);		
@@ -651,10 +633,10 @@ const processFreeText = async (context, topContext, br_text) => {
 	}
 	else if(context.pageRotationDegree === 90)
 	{	
-		newMinX = info.left / info.pageWidth * context.pageInfo.width;
-		newMaxX = (info.left + info.width)/ info.pageWidth * context.pageInfo.width;	
-		newMinY = info.top / info.pageHeight * context.pageInfo.height
-		newMaxY = (info.top + info.height)/ info.pageHeight * context.pageInfo.height;			
+		newMinX = info.groupBounds.left * ratioWidth;
+		newMaxX = (info.groupBounds.left + info.groupBounds.width) * ratioWidth;	
+		newMinY = info.groupBounds.top * ratioHeight;
+		newMaxY = (info.groupBounds.top + info.groupBounds.height) * ratioHeight;			
 			
 		size.minX = Math.min(newMinY, newMaxY);
 		size.maxX = Math.max(newMinY, newMaxY);		
@@ -663,15 +645,17 @@ const processFreeText = async (context, topContext, br_text) => {
 	}
 	else if(context.pageRotationDegree === 270)
 	{	
-		newMinX = context.pageInfo.width - (info.left / info.pageWidth * context.pageInfo.width);
-		newMaxX = context.pageInfo.width - ((info.left + info.width)/ info.pageWidth * context.pageInfo.width);	
-		newMinY = context.pageInfo.height - (info.top / info.pageHeight * context.pageInfo.height)
-		newMaxY = context.pageInfo.height - ((info.top + info.height)/ info.pageHeight * context.pageInfo.height);			
-
+		
+		newMinX = context.pageInfo.width - info.groupBounds.left * ratioWidth;
+		newMaxX = context.pageInfo.width - (info.groupBounds.left + info.groupBounds.width) * ratioWidth;	
+		newMinY = context.pageInfo.height - (info.groupBounds.top * ratioHeight)
+		newMaxY = context.pageInfo.height - ((info.groupBounds.top + info.groupBounds.height) * ratioHeight);			
+		
 		size.minX = Math.min(newMinY, newMaxY);
 		size.maxX = Math.max(newMinY, newMaxY);
 		size.minY = Math.min(newMinX, newMaxX);
 		size.maxY = Math.max(newMinX, newMaxX);
+		
 	}
 	
 	//In puppeteer, the size of the text is a bit smaller, so we add a scale factor to adjust the resulting size.
@@ -688,35 +672,33 @@ const processFreeText = async (context, topContext, br_text) => {
 		var lineWidth = 0, charCount = 0, currentLine = "";
 		var newLines = []; //the separation of the text into lines that will fit the width and height
 		var wordWidth = 0, wordHeight = 0; 	
-						
-		//var textRotationRad = skewAngleDegrees !== null? (skewAngleDegrees + context.pageRotationDegree) * Math.PI / 180: null;
-		var textRotationRad = skewAngleDegrees !== null? (skewAngleDegrees + context.pageRotationDegree) : null;	
-
+		
 		let getLineMetrics = (line) => {
-			//Make the width and height bigger than it is when text is rotated to make sure it fits the bounding box
-			const rotateScale = 1.08; 
-			svgTextElement.textContent = toSvgTextContent(line);					
-			if (textRotationRad !== null)
-				svgTextElement.setAttribute("transform", "rotate(" + textRotationRad + ")");					
-			else
+			svgTextElement.textContent = toSvgTextContent(line);
+			if (skewAngleDegrees !== null) {
+				svgTextElement.setAttribute("transform", "rotate(" + skewAngleDegrees + ")");					
+				svgTextElement.setAttribute("transform-origin", "center");					
+				svgTextElement.setAttribute("style", "transform-box: fill-box;");					
+			}else {
 				svgTextElement.removeAttribute("transform");	
-	
-			let metrics = svgTextElement.getBBox();		
+				svgTextElement.removeAttribute("transform-origin");	
+				svgTextElement.removeAttribute("style");	
+			}
+			
+			//Get the rotated size
+			let metrics = svgTextElement.getBoundingClientRect(); //svgTextElement.getBBox() returns the size of unrotated text so we use svgTextElement.getBoundingClientRect() instead	
 			width = metrics.width * scaleFactor;
 			height = metrics.height * scaleFactor;
+			
+			metrics = svgTextElement.getBBox() 
 			svgTextElement.textContent = line;				
-						
-			if (textRotationRad !== null){				
-				let w = width * rotateScale, h = height * rotateScale;
-				if (txtWidth > txtHeight && w > h)
-				{ 
-					width = w;
-					height = h;
-				} else {
-					width = h;
-					height = w;
-				}				
-			}
+			
+			//Make the width and height bigger than it is when text is rotated to make sure it fits the bounding box
+			if (skewAngleDegrees !== null)
+			{   const offset = 1.08;
+				width *= offset;
+				height *= offset;
+			} 	
 			
 			return {width: width, height: height};
 		}
@@ -827,7 +809,9 @@ const processFreeText = async (context, topContext, br_text) => {
 		
 		// Create an SVG shape element, for example, a rectangle
 		const svgText = createSVGNode("text", {"xml:space": "preserve", "x": "0", "y": txtHeight / 2, "font-size":  `${fontSize}pt`, "font-family": `${fontFace}`});
-				
+								
+		ctx.font =  `${fontSize}pt '${fontFace}'`;
+		
 		// Append the rectangle to the SVG element
 		svg.appendChild(svgText);
 		
@@ -878,7 +862,9 @@ const processFreeText = async (context, topContext, br_text) => {
 			}
 			svgText.setAttribute("font-size", `${newFontSize}pt`);
 			svgText.setAttribute("font-family", `${fontFace}`);
-			
+										
+			ctx.font =  `${newFontSize}pt '${fontFace}'`;
+	
 			var metrics = getTextMetrics(lines, svgText, txtWidth, txtHeight);
 			if (parseInt(fontSize) === parseInt(newFontSize) && totalHeight < txtHeight && totalWidth < txtWidth && ratioHeight < maxRatioThreshold.height)
 				correctSize = true;
@@ -887,8 +873,7 @@ const processFreeText = async (context, topContext, br_text) => {
 			{				
 				correctSize = true;
 				continue;
-			} 
-							
+			} 		
 			totalWidth = metrics.totalWidth;
 			totalHeight = metrics.totalHeight;
 			lineCount = metrics.textLines.length; 
@@ -896,30 +881,36 @@ const processFreeText = async (context, topContext, br_text) => {
 			ratioHeight = totalHeight / txtHeight;
 			if (!correctSize)
 				correctSize = (totalHeight < txtHeight && totalWidth < txtWidth && ratioHeight > minRatioThreshold.height
-					&& ratioHeight < maxRatioThreshold.height);	
+					&& ratioHeight < maxRatioThreshold.height);						
 			fontSize = newFontSize;		
 			fontSizes[newFontSize+""] = {lineCount: lineCount, ratioWidth: ratioWidth, ratioHeight: ratioHeight};
-			
+			if (!correctSize && ratioWidth <  maxRatioThreshold.width && ratioHeight < maxRatioThreshold.height && fontSizes[(newFontSize + 1)+""] !== undefined &&
+				fontSizes[(newFontSize + 1)+""].ratioWidth >  maxRatioThreshold.width && fontSizes[(newFontSize + 1)+""].ratioHeight < maxRatioThreshold.height
+				) {
+				correctSize = true;
+				continue;
+			}
 			retries--;	
 		}
-
+		
 		svg.parentElement.removeChild(svg);
 
 		//If text is rotated, we need to switch the width and height
 		//if (txtRotation == 90 || txtRotation == 270) 
 		//	return {width: txtHeight, height: txtWidth, fontSize: fontSize+"pt"};
 		//else 
-			return {width: txtWidth, height: txtHeight, fontSize: fontSize+"pt"};
+		return {width: txtWidth, height: txtHeight, fontSize: fontSize+"pt"};
 		
 	};
 	
 	//Get the font size adjusted to a scale factor
 	var bravaFontSize = parseFloat(fontVal) * 83 / 0.5; //Math.floor(parseFloat(fontVal) / 0.0352778 * 8);
-	var txtWidth = size.maxX - size.minX , txtHeight = size.maxY - size.minY;
-	var txtRotation = Math.abs(rotationDegree - context.pageRotationDegree); 
+	var txtWidth = size.maxX - size.minX - (info.groupBounds.left - info.textBounds.left), 
+		txtHeight = size.maxY - size.minY - (info.groupBounds.top - info.textBounds.top);
+	var txtRotation = info.textRotation; //Math.abs(rotationDegree - context.pageRotationDegree); 
 	if (context.pageRotationDegree == 90 || context.pageRotationDegree == 270) {
-		txtHeight = size.maxX - size.minX;
-		txtWidth = size.maxY - size.minY;
+		txtHeight = size.maxX - size.minX  - (info.groupBounds.top - info.textBounds.top);
+		txtWidth = size.maxY - size.minY - (info.groupBounds.left - info.textBounds.left);
 	}
 	
 	//If font is not Arial and Times New Roman, use the Arial font so we can calculate the fontSize correctly
@@ -934,25 +925,22 @@ const processFreeText = async (context, topContext, br_text) => {
 	console.log( "height: " + txtMetrics.height +" size: "+ size.minX+"," + size.minY+","+ size.maxX+","+size.maxY +" context.pageRotationDegree: "+ context.pageRotationDegree);
 		
 	//Adjust the size according to the pageRotation
+	/*
 	switch (context.pageRotationDegree) {
 		case 90:
 			size.maxX = size.minX + pixelToPoints(txtMetrics.height)
-			//size.maxY = size.minY + pixelToPoints(txtMetrics.width);
 			break;
 		case 180:
-			//size.maxX = size.minY + pixelToPoints(txtMetrics.width);
 			size.maxY = size.minX + pixelToPoints(txtMetrics.height);
 			break;
 		case 270:
-			//size.minY = size.maxY - pixelToPoints(txtMetrics.width);
 			size.minX = size.maxX - pixelToPoints(txtMetrics.height);
 			break;
 		case 0:
-			//size.maxX = size.minX + pixelToPoints(txtMetrics.width);
 			size.minY = size.maxY - pixelToPoints(txtMetrics.height);
 			break;
 	}
-	
+	*/
 	return {
 		rect: size,
 		textFlow: info.textFlow,
@@ -961,6 +949,8 @@ const processFreeText = async (context, topContext, br_text) => {
 		fontFace: fontFace.replace(/\s+/g, ""),
 		rotationDegree: rotationDegree,
 		textRotation: skewAngleDegrees,
+		textWidth: pixelToPoints(txtMetrics.width),
+		textHeight: pixelToPoints(txtMetrics.height),
 		br_node: br_text
 	}
 };
@@ -1004,9 +994,12 @@ const createFreeTextNode = async (context, br_text) => {
 	  }
   }
   
-  const index = parseInt(br_text.getAttribute("index")), info = freeTextInfos[index], textFlow = info["textFlow"],
-    size = info.rect, bravaFontProp = info["fontFace"]+"|" + info["bravaFontSize"], fontSize = context.bravaFonts[bravaFontProp], 
-	fontFace = info["fontFace"], annotRotation = info["textRotation"] !== null? info["textRotation"] : context.pageRotationDegree;
+  const index = parseInt(br_text.getAttribute("index")), info = freeTextInfos[index], textFlow = info["textFlow"], size = info.rect, 
+	bravaFontProp = info["fontFace"]+"|" + info["bravaFontSize"], fontSize = context.bravaFonts[bravaFontProp], fontFace = info["fontFace"];
+	let	annotRotation = context.pageRotationDegree;
+	
+	if (info["textRotation"] !== null)
+		annotRotation -= info["textRotation"]; 
 	
 	const xfdf_freetext = outXfdfDoc.createElement('freetext');
 		  
@@ -1017,7 +1010,7 @@ const createFreeTextNode = async (context, br_text) => {
 		fontsize: fontsizeAttr,
 		opaque: opaqueAttr,
 	  } = br_text.attributes;
-	  
+	   
 	  let copyAttributes = {
 		page: pageIndex,
 		title: authorName,	
@@ -1028,7 +1021,7 @@ const createFreeTextNode = async (context, br_text) => {
 		width: "0", // border always applied. So, set it to zero by default.
 		rotation: context.pageInfo.dataType === "stamp"? info["rotationDegree"]: annotRotation  //Set appropriate rotation in the Freetext element
 	  };
-	 
+		 
 	  if (opaqueAttr.value === 'secondarycolor') {
 		copyAttributes = {
 		  ...copyAttributes,
@@ -1056,9 +1049,10 @@ const createFreeTextNode = async (context, br_text) => {
 		context,
 	  );
 
-	  let textContent = '';
+	  let textContent = '';// singleLine = br_text.querySelectorAll("TextLine").length === 1;
 	  for(let i = 0, len = textFlow.length; i < len; i++)
 	  {
+		  //textContent = textContent + (textContent === "" ? "" : (singleLine? " ": '\n')) + textFlow[i];
 		  textContent = textContent + (textContent === "" ? "" : '\n') + textFlow[i];
 	  }
 	  
@@ -1072,8 +1066,8 @@ const createFreeTextNode = async (context, br_text) => {
 	  defaultAppearanceText += `rg /${fontFace} ${fontSize} Tf`;  //Include the font face and size to the default appearance  
 	  xfdf_defaultappearanceNode.textContent = defaultAppearanceText;
 	  const xfdf_defaultstyleNode = outXfdfDoc.createElement('defaultstyle');
-
-	  switch (textAlignment) {
+	  let alignment = info["textRotation"] !== null? "C": textAlignment;
+	  switch (alignment) {
 		case 'L':
 		  xfdf_defaultstyleNode.textContent = `font: '${fontFace}' ${fontSize}pt; text-align: left;`; //Include the font face and size to the default style
 		  break;
@@ -1084,7 +1078,7 @@ const createFreeTextNode = async (context, br_text) => {
 		  xfdf_defaultstyleNode.textContent = `font: '${fontFace}' ${fontSize}pt; text-align: center;`; //Include the font face and size to the default style
 		  break;
 	  }
-	  xfdf_defaultstyleNode.textContent += ' text-vertical-align: top;';
+	  xfdf_defaultstyleNode.textContent += info["textRotation"] !== null? ' text-vertical-align: center;': ' text-vertical-align: top;';
 	  
 	  //Support bold, italics, underline settings from the Brava markup
 	  var isBold = br_text.getAttribute("bold") === "true", isItalic = br_text.getAttribute("italic") === "true", isUnderline = br_text.getAttribute("underline") === "true";
@@ -1103,6 +1097,19 @@ const createFreeTextNode = async (context, br_text) => {
 	  xfdf_freetext.appendChild(xfdf_contentsNode);
 	  xfdf_freetext.appendChild(xfdf_defaultappearanceNode);
 	  xfdf_freetext.appendChild(xfdf_defaultstyleNode);
+	  
+	    
+	  if (info["textRotation"] !== null)
+	  {
+		  let newRect = recalculateTextBounds(new Core.Math.Rect(size.minX, size.minY, size.maxX, size.maxY), info["textRotation"],
+			context.pageRotationDegree, info["textWidth"], info["textHeight"] );		  
+		  //xfdf_freetext.setAttribute("rect", `${newRect.x1},${newRect.y1},${newRect.x2},${newRect.y2}`);
+		  const trnCustomData = outXfdfDoc.createElement('trn-custom-data');
+		  trnCustomData.setAttribute("bytes", JSON.stringify({"trn-unrotated-rect":`${newRect.x1},${newRect.y1},${newRect.x2},${newRect.y2}`}));
+		  
+		  //trnCustomData.setAttribute("bytes", JSON.stringify({"trn-unrotated-rect": `${size.minX},${size.minY},${size.maxX},${size.maxY}`}));		
+		  xfdf_freetext.appendChild(trnCustomData);
+	  }
 	  
     return xfdf_freetext;
 };
@@ -1212,40 +1219,20 @@ const createStampNode = async (context, topContext, br_raster, isChangeView = fa
 		imageId = br_idTextNode.textContent.replace(/^\s+|\s+$/g, ''),
 		imageInfo = topContext.bravaImages[imageId];
 	
-    const [br_matrixNode] = br_raster.getElementsByTagName('Matrix');
-
-    const imageMatrix = br_matrixNode.textContent.split('|').map(n => parseFloat(n, 10));
+    const imageMatrix = extractMatrix(br_raster); 
     const br_foundImageNode = inXrlDoc.querySelector(`Image[guid="${br_idTextNode.textContent.replace(/^\s+|\s+$/g, '')}"]`);
-    /*const imageData = `data:${'image/png'};base64,${br_foundImageNode.textContent.replace(/=+$/, '')}`;
-    const { width: imageWidth, height: imageHeight } = await getImageDimensions(imageData);
-	*/
-    const points = [
-      { x: 0, y: 0 }, // bottom-left point
-      { x: imageInfo.imageWidth, y: imageInfo.imageHeight }, // top-right point
-    ];
-    const { rectPoints, rotationDegree } = getConvertedPoints(points, {
-      ...context,
-      // This is for grouping.
-      matrix: multiplyMatrices(context.matrix, imageMatrix),
-    });
-
-    const {
-      minX,
-      minY,
-      maxX,
-      maxY,
-    } = rectPoints;
+	const imagePost = getImagePosition(context, imageInfo, imageMatrix);
 
     const xfdf_stampNode = outXfdfDoc.createElement('stamp');
 
     setXfdfAttributes(
       {
         page: pageIndex,
-        rect: `${minX},${minY},${maxX},${maxY}`,
+        rect: `${imagePost.rect.minX},${imagePost.rect.minY},${imagePost.rect.maxX},${imagePost.rect.maxY}`,
         title: authorName,
         subject: 'Stamp',
         //rotation: rotationDegree,
-		rotation: context.pageRotationDegree, //Set rotation to the page rotation in the Stamp element since the image will be at 0 degrees		
+		rotation: context.pageRotationDegree - imagePost.rotationAngle, //Set rotation to the page rotation in the Stamp element since the image will be at 0 degrees		
       },
       br_raster.attributes,
       xfdf_stampNode,
@@ -2164,24 +2151,20 @@ const processAnnot = (br_annot, context, topContext, bookmarks) => {
   let nodePromise;
   const { pageIndex } = topContext;
 
-  if (br_annot.nodeName === 'Group') {
+  if (br_annot.nodeName === 'Group' || br_annot.nodeName === 'Stamp') {
     const br_elements = br_annot.getElementsByTagName('Elements')[0];
-    const [br_matrixNode] = br_annot.getElementsByTagName('Matrix');
     const { attributes } = br_annot;
     const groupId = attributes && attributes.guid && attributes.guid.value;
 
-    let { matrix } = context;
-    if (br_matrixNode) {
-      const groupMatrix = br_matrixNode.textContent.split('|').map((n) => parseFloat(n, 10));
-      matrix = multiplyMatrices(context.matrix, groupMatrix);
-    }
-
+    let matrix = multiplyMatrices(context.matrix, extractMatrix(br_annot));
+    
     const br_annot_attr = br_annot.attributes['name'];
 
     const authorName = (br_annot_attr == null) ? context.authorName : br_annot_attr.value;
 
     nodePromises.push(...processNodes(br_elements.childNodes, {
       groupId,
+	  groupNode: br_annot,
       matrix,
       isGroup: true,
     }, { authorName, ...topContext }, bookmarks));
@@ -2434,11 +2417,12 @@ const xrlToXfdf = async (inputXrlStr, pageInfos, extension, freeTextJustificatio
       outXfdfDoc,
       inXrlDoc,
       CDLInfo,
-      DriverInfo: DriverInfo && DriverInfo.textContent,
+	  DriverInfo: DriverInfo && DriverInfo.textContent,
       bravaPage: {
         left, bottom, right, top,
       },
       matrix: [1, 0, 0, 1, 0, 0], // identity matrix
+	  
       pageRotationDegree,	 
 	  pageInfo: pageInfo,
 	  freeTextPromises: [],
