@@ -39,6 +39,21 @@ import {
   transformTextPoints
 } from './utils';
 
+// Swap the off-diagonal terms (b/c) of a 6-value affine matrix. Used to undo the
+// swap performed by extractMatrix() when a matrix is consumed directly by
+// getConvertedPoint() (which uses the un-swapped x' = a*x + c*y convention) rather
+// than through the SVG helpers that swap the terms back themselves.
+const transposeMatrixRotation = (matrix) => {
+  if (!Array.isArray(matrix) || matrix.length < 4) {
+    return matrix;
+  }
+  const result = matrix.slice();
+  const temp = result[1];
+  result[1] = result[2];
+  result[2] = temp;
+  return result;
+};
+
 const getConvertedPoint = ({ x, y }, { pageConversion = { x: 1, y: 1 }, matrix = [] }) => {
   // a b h
   // c d v
@@ -282,13 +297,95 @@ const getConvertedPointsFromNode = (br_node, context) => {
     });
   });
   
-  var obj = getConvertedPoints(unConvertedPoints, context);
-  
+  // extractMatrix() swaps matrix[1]/matrix[2] to compensate for getTransformFromMatrix()'s
+  // own swap on the SVG/text path. getConvertedPoint() applies the matrix directly
+  // (x' = a*x + c*y), so it needs the matrix in its original orientation; transpose the
+  // rotation part back here so rotated annotation/group matrices are applied correctly.
+  const conversionContext = Array.isArray(context.matrix)
+    ? { ...context, matrix: transposeMatrixRotation(context.matrix) }
+    : context;
+
+  var obj = getConvertedPoints(unConvertedPoints, conversionContext);
+
   var multiplier = br_node.getElementsByTagName('DLtoXMultiplier');
   if (multiplier != null && multiplier.length > 0)
 	  obj["dltoXMultiplier"] = multiplier[0].getAttribute("encoding") !== null? decode(multiplier[0].textContent): parseFloat(multiplier[0].textContent, 10);
   
   return obj;
+};
+
+const countLeadingSpaces = (line) => {
+	let n = 0;
+	while (n < line.length && (line[n] === ' ' || line[n] === '\u00A0')) n++;
+	return n;
+};
+
+//Converted page rects of the vector siblings (checkbox squares etc.) that share the
+//stamp/group with a Text element. Used to widen a text line's leading whitespace so
+//its first glyph clears a checkbox that sits in that leading gap.
+const getSiblingVectorRects = (context) => {
+	const rects = [];
+	if (!context.groupNode || !Array.isArray(context.matrix)) return rects;
+	const tags = ['NonEditPolygon', 'Polygon', 'NonEditPolyline', 'Polyline', 'Ellipse'];
+	tags.forEach((tag) => {
+		const nodes = context.groupNode.getElementsByTagName(tag);
+		for (let i = 0, len = nodes.length; i < len; i++) {
+			try {
+				const { rectPoints } = getConvertedPointsFromNode(nodes[i], context);
+				if (rectPoints && isFinite(rectPoints.minX) && isFinite(rectPoints.maxX)) rects.push(rectPoints);
+			} catch (e) { /* skip shapes that fail to convert */ }
+		}
+	});
+	return rects;
+};
+
+//Brava renders a stamp's small-print text larger than the converter's fitted font, so
+//the source leading spaces already clear an adjacent checkbox. The converter keeps its
+//fitted font, so a checkbox can slide over the first glyphs. For stamp text lines that
+//start with whitespace, widen that whitespace (at the fitted font's space width) until
+//the first glyph clears any sibling vector that overlaps the leading gap. Only lines
+//that already have leading whitespace are touched, so other freetext is unaffected.
+const padLeadingWhitespaceToClearVectors = (textFlow, size, fontSize, fontFace, rotation, context) => {
+	if (!context.groupNode) return textFlow;
+	if (!textFlow.some((line) => countLeadingSpaces(line) > 0)) return textFlow;
+	const rects = getSiblingVectorRects(context);
+	if (!rects.length) return textFlow;
+
+	const rot = (((parseInt(rotation, 10) || 0) % 360) + 360) % 360;
+	let axis, sign, lineStart;
+	if (rot === 90) { axis = 'y'; sign = 1; lineStart = size.minY; }
+	else if (rot === 270) { axis = 'y'; sign = -1; lineStart = size.maxY; }
+	else if (rot === 180) { axis = 'x'; sign = -1; lineStart = size.maxX; }
+	else if (rot === 0) { axis = 'x'; sign = 1; lineStart = size.minX; }
+	else return textFlow;
+
+	const measureCtx = document.createElement('canvas').getContext('2d');
+	measureCtx.font = `${fontSize}pt '${fontFace}'`;
+	const spaceW = (measureCtx.measureText('\u00A0').width || measureCtx.measureText(' ').width) * 72 / 96;
+	if (!(spaceW > 0)) return textFlow;
+
+	return textFlow.map((line) => {
+		const nLead = countLeadingSpaces(line);
+		if (nLead === 0) return line;
+		const glyphPos = lineStart + sign * nLead * spaceW;
+		let clearPos = null;
+		rects.forEach((r) => {
+			const near = axis === 'y' ? r.minY : r.minX;
+			const far = axis === 'y' ? r.maxY : r.maxX;
+			const vStart = sign > 0 ? near : far;
+			const vEnd = sign > 0 ? far : near;
+			const startsBeforeGlyph = sign * vStart < sign * glyphPos;
+			const endsAfterLineStart = sign * vEnd > sign * lineStart;
+			if (startsBeforeGlyph && endsAfterLineStart) {
+				if (clearPos === null || sign * vEnd > sign * clearPos) clearPos = vEnd;
+			}
+		});
+		if (clearPos === null) return line;
+		const needed = Math.ceil(sign * (clearPos - lineStart) / spaceW) + 1;
+		if (needed <= nLead) return line;
+		const spaceChar = line[0] === '\u00A0' ? '\u00A0' : ' ';
+		return spaceChar.repeat(needed - nLead) + line;
+	});
 };
 
 const createNodeWithVertices = async (
@@ -618,45 +715,47 @@ const processFreeText = async (context, topContext, br_text) => {
 	var newMinX = size.minX, newMinY = size.newMinY, newMinY = size.minY, newMaxY = size.maxY,
 		ratioWidth = context.pageInfo.width / info.pageWidth,
 		ratioHeight = context.pageInfo.height / info.pageHeight;
+	//Convert a Brava bounds ({left, top, width, height} in the measurement SVG) to
+	//an Apryse page rect, applying the page rotation. Unhandled rotations (e.g. 180)
+	//leave the rect untouched, matching the previous behaviour.
+	const bravaBoundsToRect = (bounds) => {
+		let rect = {minX: size.minX, minY: size.minY, maxX: size.maxX, maxY: size.maxY},
+			left = bounds.left * ratioWidth, right = (bounds.left + bounds.width) * ratioWidth,
+			top, bottom;
+		if(context.pageRotationDegree === 0)
+		{
+			top = context.pageInfo.height - (bounds.top * ratioHeight);
+			bottom = context.pageInfo.height - (bounds.top + bounds.height) * ratioHeight;
+			rect.minX = Math.min(left, right);
+			rect.maxX = Math.max(left, right);
+			rect.minY = Math.min(top, bottom);
+			rect.maxY = Math.max(top, bottom);
+		}
+		else if(context.pageRotationDegree === 90)
+		{
+			top = bounds.top * ratioHeight;
+			bottom = (bounds.top + bounds.height) * ratioHeight;
+			rect.minX = Math.min(top, bottom);
+			rect.maxX = Math.max(top, bottom);
+			rect.minY = Math.min(left, right);
+			rect.maxY = Math.max(left, right);
+		}
+		else if(context.pageRotationDegree === 270)
+		{
+			left = context.pageInfo.width - bounds.left * ratioWidth;
+			right = context.pageInfo.width - (bounds.left + bounds.width) * ratioWidth;
+			top = context.pageInfo.height - (bounds.top * ratioHeight);
+			bottom = context.pageInfo.height - ((bounds.top + bounds.height) * ratioHeight);
+			rect.minX = Math.min(top, bottom);
+			rect.maxX = Math.max(top, bottom);
+			rect.minY = Math.min(left, right);
+			rect.maxY = Math.max(left, right);
+		}
+		return rect;
+	};
+
 	//Convert the coordinates from Brava to Apryse
-	if(context.pageRotationDegree === 0)
-	{	
-		newMinX = info.groupBounds.left * ratioWidth;
-		newMaxX = (info.groupBounds.left + info.groupBounds.width) * ratioWidth;
-		newMinY = context.pageInfo.height - (info.groupBounds.top * ratioHeight);		
-		newMaxY = context.pageInfo.height - (info.groupBounds.top + info.groupBounds.height) * ratioHeight;
-		
-		size.minX = Math.min(newMinX, newMaxX);
-		size.maxX = Math.max(newMinX, newMaxX);		
-		size.minY = Math.min(newMinY, newMaxY);
-		size.maxY = Math.max(newMinY, newMaxY);
-	}
-	else if(context.pageRotationDegree === 90)
-	{	
-		newMinX = info.groupBounds.left * ratioWidth;
-		newMaxX = (info.groupBounds.left + info.groupBounds.width) * ratioWidth;	
-		newMinY = info.groupBounds.top * ratioHeight;
-		newMaxY = (info.groupBounds.top + info.groupBounds.height) * ratioHeight;			
-			
-		size.minX = Math.min(newMinY, newMaxY);
-		size.maxX = Math.max(newMinY, newMaxY);		
-		size.minY = Math.min(newMinX, newMaxX);
-		size.maxY = Math.max(newMinX, newMaxX);
-	}
-	else if(context.pageRotationDegree === 270)
-	{	
-		
-		newMinX = context.pageInfo.width - info.groupBounds.left * ratioWidth;
-		newMaxX = context.pageInfo.width - (info.groupBounds.left + info.groupBounds.width) * ratioWidth;	
-		newMinY = context.pageInfo.height - (info.groupBounds.top * ratioHeight)
-		newMaxY = context.pageInfo.height - ((info.groupBounds.top + info.groupBounds.height) * ratioHeight);			
-		
-		size.minX = Math.min(newMinY, newMaxY);
-		size.maxX = Math.max(newMinY, newMaxY);
-		size.minY = Math.min(newMinX, newMaxX);
-		size.maxY = Math.max(newMinX, newMaxX);
-		
-	}
+	Object.assign(size, bravaBoundsToRect(info.groupBounds));
 	
 	//In puppeteer, the size of the text is a bit smaller, so we add a scale factor to adjust the resulting size.
 	const scaleFactor = isPuppeteer() ? 1.20: 1;
@@ -923,7 +1022,23 @@ const processFreeText = async (context, topContext, br_text) => {
 	let txtMetrics = convertBravaTextMetrics(info.textFlow, fontFace, bravaFontSize, txtWidth * info.textWidthRatio * scaleFactor, txtHeight * info.textHeightRatio * scaleFactor, txtRotation, maxRatioThreshold, minRatioThreshold);
 	let fontSize = txtMetrics.fontSize.replace("pt", "");
 	console.log( "height: " + txtMetrics.height +" size: "+ size.minX+"," + size.minY+","+ size.maxX+","+size.maxY +" context.pageRotationDegree: "+ context.pageRotationDegree);
-		
+
+	// Brava draws the text against the bottom of its markup box, but Apryse anchors
+	// FreeText to the start of the rect, so mapping the whole box (groupBounds) puts
+	// the text too high. Re-map the rect (via the same transform as above) using the
+	// box extent along the reading direction (X in Brava space, so the line never
+	// wraps/clips) but the measured text extent along the perpendicular (height)
+	// direction, so the text lands where Brava drew it. Only for upright text
+	// (rotated/skewed keeps its point-based layout).
+	if (info.textRotation === null && info.textBounds && info.groupBounds) {
+		Object.assign(size, bravaBoundsToRect({
+			left: info.groupBounds.left,
+			width: info.groupBounds.width,
+			top: info.textBounds.top,
+			height: info.textBounds.height
+		}));
+	}
+
 	//Adjust the size according to the pageRotation
 	/*
 	switch (context.pageRotationDegree) {
@@ -1010,7 +1125,7 @@ const createFreeTextNode = async (context, br_text) => {
 		let lineSlack = (size.maxY - size.minY) * 0.25;
 		if (info["textRotation"] > 0) size.minY -= lineSlack; else size.maxY += lineSlack;
 	}
-	
+
 	const xfdf_freetext = outXfdfDoc.createElement('freetext');
 		  
 	  var {
@@ -1059,11 +1174,15 @@ const createFreeTextNode = async (context, br_text) => {
 		context,
 	  );
 
+	  const outTextFlow = padLeadingWhitespaceToClearVectors(
+		textFlow, size, fontSize, fontFace, copyAttributes.rotation, context
+	  );
+
 	  let textContent = '';// singleLine = br_text.querySelectorAll("TextLine").length === 1;
-	  for(let i = 0, len = textFlow.length; i < len; i++)
+	  for(let i = 0, len = outTextFlow.length; i < len; i++)
 	  {
 		  //textContent = textContent + (textContent === "" ? "" : (singleLine? " ": '\n')) + textFlow[i];
-		  textContent = textContent + (textContent === "" ? "" : '\n') + textFlow[i];
+		  textContent = textContent + (textContent === "" ? "" : '\n') + outTextFlow[i];
 	  }
 	  
 	  textContent = textContent.replace(/ /g, '\u00A0');

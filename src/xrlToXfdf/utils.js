@@ -1048,7 +1048,7 @@ export const transformTextPoints = (context, topContext, textAttr, text) => {
 	const defaultFontSize = 13, fontMultiplier = bravaHeight * 0.1, strokeMultiplier = 1 / 60 * bravaHeight;
 	var bravaFontSize = fontsize * fontMultiplier;
 	
-	const svgNode = createSVGNode("svg", {"width": bravaWidth, "height": bravaHeight, "style": "position: absolute; top: 0px; left: 0px; border:1px solid red;"});
+	const svgNode = createSVGNode("svg", {"width": bravaWidth, "height": bravaHeight, "style": "position: absolute; top: 0px; left: 0px;"});
 		
 	var pageMtx = multiplyMatrices(scale(naturalPageWidth / bravaWidth, naturalPageHeight / bravaHeight), translate(0, bravaHeight), scale(1, -1), translate(0, 0));
 	
