@@ -1197,7 +1197,7 @@ const createFreeTextNode = async (context, br_text) => {
 		  textContent = textContent + (textContent === "" ? "" : '\n') + outTextFlow[i];
 	  }
 	  
-	  textContent = textContent.replace(/ /g, '\u00A0');
+	  textContent = textContent.replace(/\u00A0/g, ' ');
 	  const xfdf_contentsNode = outXfdfDoc.createElement('contents');
 	  xfdf_contentsNode.textContent = textContent;
 	  const xfdf_defaultappearanceNode = outXfdfDoc.createElement('defaultappearance');
