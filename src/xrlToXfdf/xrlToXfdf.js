@@ -1001,6 +1001,16 @@ const createFreeTextNode = async (context, br_text) => {
 	if (info["textRotation"] !== null)
 		annotRotation -= info["textRotation"]; 
 	
+	// Near-vertical (±90°) Brava text lines anchor at the box start and read along
+	// the box's long (Y) axis. The left-align + text-line slack below only apply to
+	// those; diagonal/free-angle rotated text keeps its original centered layout.
+	let isVerticalText = info["textRotation"] !== null && Math.abs(Math.abs(info["textRotation"]) - 90) <= 20;
+	
+	if (isVerticalText) {
+		let lineSlack = (size.maxY - size.minY) * 0.25;
+		if (info["textRotation"] > 0) size.minY -= lineSlack; else size.maxY += lineSlack;
+	}
+	
 	const xfdf_freetext = outXfdfDoc.createElement('freetext');
 		  
 	  var {
@@ -1056,6 +1066,7 @@ const createFreeTextNode = async (context, br_text) => {
 		  textContent = textContent + (textContent === "" ? "" : '\n') + textFlow[i];
 	  }
 	  
+	  textContent = textContent.replace(/ /g, '\u00A0');
 	  const xfdf_contentsNode = outXfdfDoc.createElement('contents');
 	  xfdf_contentsNode.textContent = textContent;
 	  const xfdf_defaultappearanceNode = outXfdfDoc.createElement('defaultappearance');
@@ -1066,7 +1077,7 @@ const createFreeTextNode = async (context, br_text) => {
 	  defaultAppearanceText += `rg /${fontFace} ${fontSize} Tf`;  //Include the font face and size to the default appearance  
 	  xfdf_defaultappearanceNode.textContent = defaultAppearanceText;
 	  const xfdf_defaultstyleNode = outXfdfDoc.createElement('defaultstyle');
-	  let alignment = info["textRotation"] !== null? "C": textAlignment;
+	  let alignment = isVerticalText? "L": (info["textRotation"] !== null? "C": textAlignment);
 	  switch (alignment) {
 		case 'L':
 		  xfdf_defaultstyleNode.textContent = `font: '${fontFace}' ${fontSize}pt; text-align: left;`; //Include the font face and size to the default style

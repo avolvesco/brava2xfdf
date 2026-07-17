@@ -1103,8 +1103,8 @@ export const transformTextPoints = (context, topContext, textAttr, text) => {
 	ctx.textAlign = "left";
     ctx.font = bravaFontSize + "px '" + fontface + "'";	
 	let charWidth = ctx.measureText("M").width;
-    var n = 0.25 * charWidth;
-	var m = 0.1 * charWidth;
+    var n = 0; //0.25 * charWidth;
+	var m = 0; //0.1 * charWidth;
 	var lineWidth = width * (24 / (0.9 * bravaFontSize));
  	
 	const getBoundingBox = (origbbox, bravaFontSize, posY) => {
