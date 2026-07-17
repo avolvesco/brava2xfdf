@@ -716,8 +716,7 @@ const processFreeText = async (context, topContext, br_text) => {
 		ratioWidth = context.pageInfo.width / info.pageWidth,
 		ratioHeight = context.pageInfo.height / info.pageHeight;
 	//Convert a Brava bounds ({left, top, width, height} in the measurement SVG) to
-	//an Apryse page rect, applying the page rotation. Unhandled rotations (e.g. 180)
-	//leave the rect untouched, matching the previous behaviour.
+	//an Apryse page rect, applying the page rotation.
 	const bravaBoundsToRect = (bounds) => {
 		let rect = {minX: size.minX, minY: size.minY, maxX: size.maxX, maxY: size.maxY},
 			left = bounds.left * ratioWidth, right = (bounds.left + bounds.width) * ratioWidth,
@@ -726,6 +725,19 @@ const processFreeText = async (context, topContext, br_text) => {
 		{
 			top = context.pageInfo.height - (bounds.top * ratioHeight);
 			bottom = context.pageInfo.height - (bounds.top + bounds.height) * ratioHeight;
+			rect.minX = Math.min(left, right);
+			rect.maxX = Math.max(left, right);
+			rect.minY = Math.min(top, bottom);
+			rect.maxY = Math.max(top, bottom);
+		}
+		else if(context.pageRotationDegree === 180)
+		{
+			//180 keeps the width/height axes (unlike 90/270) but flips both: X is
+			//measured from the right edge and the top/bottom Y-flips cancel out.
+			left = context.pageInfo.width - bounds.left * ratioWidth;
+			right = context.pageInfo.width - (bounds.left + bounds.width) * ratioWidth;
+			top = bounds.top * ratioHeight;
+			bottom = (bounds.top + bounds.height) * ratioHeight;
 			rect.minX = Math.min(left, right);
 			rect.maxX = Math.max(left, right);
 			rect.minY = Math.min(top, bottom);
