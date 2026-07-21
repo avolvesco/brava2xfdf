@@ -2493,7 +2493,9 @@ const xrlToXfdf = async (inputXrlStr, pageInfos, extension, freeTextJustificatio
   let bravaImages = {};
   //Extract the images data  
   const getImageData = async (br_foundImageNode) => {
-	  const imageData = `data:${br_foundImageNode.getAttribute("mimetype")};base64,${br_foundImageNode.textContent.replace(/=+$/, '')}`;			 
+	  const base64 = br_foundImageNode.textContent.trim();
+	  const paddedBase64 = base64 + '='.repeat((4 - base64.length % 4) % 4);
+	  const imageData = `data:${br_foundImageNode.getAttribute("mimetype")};base64,${paddedBase64}`;			 
 	  const { width: imageWidth, height: imageHeight } = await getImageDimensions(imageData);		
 	  bravaImages[br_foundImageNode.getAttribute("guid")] = {imageData: imageData, imageWidth: imageWidth, imageHeight: imageHeight};
 			
