@@ -623,6 +623,10 @@ export const setXfdfAttributes = (extraAttributes, br_attributes, xfdf_node, con
     }, xfdf_node);
   }
 
+  // #10208: Default every converted markup to flags="print" so Brava markups carry the PDF Print
+  // flag and still appear when the downloaded PDF is printed. Callers that set explicit flags
+  // (e.g. notes' "print,norotate") still win because extraAttributes is applied afterwards.
+  setXfdfAttributesBare({ flags: 'print' }, xfdf_node);
   setXfdfAttributesBare(extraAttributes, xfdf_node);
   if (primaryAnnotationId && primaryAnnotationId !== guidAttr.value) {
     // This for grouping this annotation to a group because they are in a group in brava
