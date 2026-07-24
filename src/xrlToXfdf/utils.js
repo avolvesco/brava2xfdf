@@ -879,7 +879,7 @@ export const getImagePosition = (context, imageInfo, imageMatrix) => {
 		
 	// Calculate the rotation angle in degrees using trigonometry
 	const ctmMatx = imageNode.getCTM(); 
-	const rotationAngle = Math.round(Math.atan2(ctmMatx.b, ctmMatx.a) * (180 / Math.PI));
+	let rotationAngle = Math.round(Math.atan2(ctmMatx.b, ctmMatx.a) * (180 / Math.PI));
 	const bounds = imageNode.getBoundingClientRect(),
 		svgBounds = svgNode.getBoundingClientRect();
 	svgNode.ownerDocument.body.removeChild(svgNode);	
@@ -935,6 +935,10 @@ export const getImagePosition = (context, imageInfo, imageMatrix) => {
 		size.minY = Math.min(newMinX, newMaxX);
 		size.maxY = Math.max(newMinX, newMaxX);
 	}
+
+	//If the rotation results as negative, normalize the rotation
+	rotationAngle = context.pageRotationDegree - rotationAngle;
+	if (rotationAngle < 0) rotationAngle = 360 + rotationAngle;
 	
 	return {rotationAngle: rotationAngle, rect: size };
 }

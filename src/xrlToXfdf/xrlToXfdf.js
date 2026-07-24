@@ -1396,7 +1396,7 @@ const createStampNode = async (context, topContext, br_raster, isChangeView = fa
         title: authorName,
         subject: 'Stamp',
         //rotation: rotationDegree,
-		rotation: context.pageRotationDegree - imagePost.rotationAngle, //Set rotation to the page rotation in the Stamp element since the image will be at 0 degrees		
+		rotation: imagePost.rotationAngle, //Set rotation to the page rotation in the Stamp element since the image will be at 0 degrees		
       },
       br_raster.attributes,
       xfdf_stampNode,
