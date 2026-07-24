@@ -610,6 +610,7 @@ const processFreeText = async (context, topContext, br_text) => {
 		for(var i = 0, len = tokenEls.length; i < len; i++)
 		{
 			tokens[tokenEls[i].getAttribute("token")] = tokenEls[i].getAttribute("answer");
+			context.freeTextTokens[tokenEls[i].getAttribute("token")] = tokenEls[i].getAttribute("answer");
 		}		
 	}
 
@@ -624,6 +625,7 @@ const processFreeText = async (context, topContext, br_text) => {
 			{
 				for(let propName in tokens)
 					line = line.replaceAll("%"+propName, tokens[propName]);			
+						
 			}
 			text += (text === "" ? "" : '\r\n') + line;
 		}
@@ -1110,14 +1112,14 @@ const createFreeTextNode = async (context, br_text) => {
 	  //If we find a Brava font in multiple freeText, use the smallest font size for it
 	   for(var i = 0, len = freeTextInfos.length; i < len; i++) 
 	   {		
-		var info = freeTextInfos[i], newFontSize = info["fontSize"];
-		var bravaFontProp = info["fontFace"]+"|" + info["bravaFontSize"];
-		if (context.bravaFonts[bravaFontProp] === undefined)
-			context.bravaFonts[bravaFontProp] = newFontSize;
-		else if (context.bravaFonts[bravaFontProp] > newFontSize)
-			context.bravaFonts[bravaFontProp] = newFontSize;			
-	
-		info.br_node.setAttribute("index", i);
+			var info = freeTextInfos[i], newFontSize = info["fontSize"];
+			var bravaFontProp = info["fontFace"]+"|" + info["bravaFontSize"];
+			if (context.bravaFonts[bravaFontProp] === undefined)
+				context.bravaFonts[bravaFontProp] = newFontSize;
+			else if (context.bravaFonts[bravaFontProp] > newFontSize)
+				context.bravaFonts[bravaFontProp] = newFontSize;			
+		
+			info.br_node.setAttribute("index", i);
 	  }
   }
   
@@ -1125,9 +1127,29 @@ const createFreeTextNode = async (context, br_text) => {
 	bravaFontProp = info["fontFace"]+"|" + info["bravaFontSize"], fontSize = context.bravaFonts[bravaFontProp], fontFace = info["fontFace"];
 	let	annotRotation = context.pageRotationDegree;
 	
+	//Last chance to replace any tokens from any tokens we get from other markups
+	if (context.pageInfo.dataType === "markup" && Object.keys(context.freeTextTokens).length > 0)
+	{
+		let dateTime = new Date();
+		for(var i = 0, len = textFlow.length; i < len; i++)
+		{	let line = textFlow[i];
+			if (line !== "") {
+					
+				//Try to replace Brava tokens from other markups first				
+				for(let propName in context.freeTextTokens)
+					line = line.replaceAll("%"+propName, context.freeTextTokens[propName]);			
+				
+				//If we still cannot find the value, we assign our own values
+				line = line.replaceAll("%Date", (dateTime.getMonth()+1) +"/" + dateTime.getDate() + "/" + dateTime.getFullYear());			
+								
+				textFlow[i] = line;
+			}
+		}	
+	}
 	if (info["textRotation"] !== null)
 		annotRotation -= info["textRotation"]; 
 	
+
 	// Near-vertical (±90°) Brava text lines anchor at the box start and read along
 	// the box's long (Y) axis. The left-align + text-line slack below only apply to
 	// those; diagonal/free-angle rotated text keeps its original centered layout.
@@ -2509,6 +2531,7 @@ const xrlToXfdf = async (inputXrlStr, pageInfos, extension, freeTextJustificatio
   
   await Promise.all(imagePromises);
 
+  var bravaTokens = {};
   const pageInfoZero = pageInfos[0];
   if (!pageInfoZero) {
     console.error(`No page info available`);
@@ -2570,6 +2593,7 @@ const xrlToXfdf = async (inputXrlStr, pageInfos, extension, freeTextJustificatio
       pageRotationDegree,	 
 	  pageInfo: pageInfo,
 	  freeTextPromises: [],
+	  freeTextTokens: bravaTokens,
 	  freeTextInfos: [],
 	  bravaFonts: {},
 	  bravaImages: bravaImages
