@@ -34,6 +34,7 @@ import {
   getImagePosition,
   recalculateTextBounds,
   extractMatrix,
+  getMatrixScale,
   createSVGNode,
   isPuppeteer,
   transformTextPoints
@@ -632,10 +633,12 @@ const processFreeText = async (context, topContext, br_text) => {
 		textLines.push(line);
 	}	
 	
+	const bravaMatrix = multiplyMatrices(matrix, textMatrix);
+
 	var { rectPoints, rotationDegree } = getConvertedPointsFromNode(br_text, {
 		...context,
 		// This is for grouping
-		matrix: multiplyMatrices(matrix, textMatrix),
+		matrix: bravaMatrix,
 		isText: true,
 	});
 	  
@@ -1073,6 +1076,7 @@ const processFreeText = async (context, topContext, br_text) => {
 	return {
 		rect: size,
 		textFlow: info.textFlow,
+		groupId: context.groupNode !== undefined ? context.groupNode.getAttribute("name"): "",
 		bravaFontSize: parseFloat(fontVal),
 		fontSize: parseInt(txtMetrics.fontSize.replace("px", "")),
 		fontFace: fontFace.replace(/\s+/g, ""),
@@ -1080,9 +1084,17 @@ const processFreeText = async (context, topContext, br_text) => {
 		textRotation: skewAngleDegrees,
 		textWidth: pixelToPoints(txtMetrics.width),
 		textHeight: pixelToPoints(txtMetrics.height),
+		fontScale: getMatrixScale(bravaMatrix),
 		br_node: br_text
 	}
 };
+
+//Freetext sharing a Brava font is measured to a slightly different size when it is rotated,
+//so the smallest measured size is re-used for all of them to keep identical markups
+//consistent. Brava also keeps that same font size when a group scales its text (the same
+//stamp placed at 10% and at 45% of the page), so the placement scale is part of the key:
+//a scaled up copy is measured on its own instead of shrinking to the smallest placement.
+const getBravaFontProp = (info) => `${info["fontFace"]}|${info["bravaFontSize"]}|${info["fontScale"]}`;
 
 const createFreeTextNode = async (context, br_text) => {
   const {
@@ -1113,7 +1125,7 @@ const createFreeTextNode = async (context, br_text) => {
 	   for(var i = 0, len = freeTextInfos.length; i < len; i++) 
 	   {		
 			var info = freeTextInfos[i], newFontSize = info["fontSize"];
-			var bravaFontProp = info["fontFace"]+"|" + info["bravaFontSize"];
+			var bravaFontProp = getBravaFontProp(info);
 			if (context.bravaFonts[bravaFontProp] === undefined)
 				context.bravaFonts[bravaFontProp] = newFontSize;
 			else if (context.bravaFonts[bravaFontProp] > newFontSize)
@@ -1124,7 +1136,7 @@ const createFreeTextNode = async (context, br_text) => {
   }
   
   const index = parseInt(br_text.getAttribute("index")), info = freeTextInfos[index], textFlow = info["textFlow"], size = info.rect, 
-	bravaFontProp = info["fontFace"]+"|" + info["bravaFontSize"], fontSize = context.bravaFonts[bravaFontProp], fontFace = info["fontFace"];
+	bravaFontProp = getBravaFontProp(info), fontSize = context.bravaFonts[bravaFontProp], fontFace = info["fontFace"];
 	let	annotRotation = context.pageRotationDegree;
 	
 	//Last chance to replace any tokens from any tokens we get from other markups
@@ -1385,7 +1397,7 @@ const createStampNode = async (context, topContext, br_raster, isChangeView = fa
 	
     const imageMatrix = extractMatrix(br_raster); 
     const br_foundImageNode = inXrlDoc.querySelector(`Image[guid="${br_idTextNode.textContent.replace(/^\s+|\s+$/g, '')}"]`);
-	const imagePost = getImagePosition(context, imageInfo, imageMatrix);
+	const imagePost = await getImagePosition(context, imageInfo, imageMatrix);
 
     const xfdf_stampNode = outXfdfDoc.createElement('stamp');
 
@@ -1404,7 +1416,7 @@ const createStampNode = async (context, topContext, br_raster, isChangeView = fa
     );
     const xfdf_imageDataNode = outXfdfDoc.createElement('imagedata');
     // TODO: Get encoding?
-    xfdf_imageDataNode.textContent = imageInfo.imageData;
+    xfdf_imageDataNode.textContent = imagePost.imageData || imageInfo.imageData;
     xfdf_stampNode.appendChild(xfdf_imageDataNode);
 
     return xfdf_stampNode;

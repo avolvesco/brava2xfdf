@@ -835,7 +835,51 @@ const rotatePointOnCenter = (angleInRadians, point, center) => {
 
 const degreesToRadians = (degree) => { return degree * Math.PI / 180; }; 
 
-export const getImagePosition = (context, imageInfo, imageMatrix) => {
+const loadImage = (imageSrc) => {
+	return new Promise((resolve, reject) => {
+		const image = new window.Image();
+		image.onload = () => resolve(image);
+		image.onerror = () => reject(new Error('Failed to load image'));
+		image.src = imageSrc;
+	});
+};
+
+//A skewed matrix no longer maps the image to a rectangle, its axes are not perpendicular anymore
+const isSkewed = (mtx) => {
+	const xAxisLength = Math.sqrt(mtx.a * mtx.a + mtx.b * mtx.b),
+		yAxisLength = Math.sqrt(mtx.c * mtx.c + mtx.d * mtx.d);
+	if (xAxisLength === 0 || yAxisLength === 0) return false;
+	return Math.abs((mtx.a * mtx.c + mtx.b * mtx.d) / (xAxisLength * yAxisLength)) > 1e-3;
+};
+
+const MAX_STAMP_CANVAS_LENGTH = 4000;
+
+//A WebViewer stamp can only be rotated, so a skewed Brava image is baked into a new raster that
+//fills the axis aligned bounds of the stamp instead.
+const rasterizeTransformedImage = async (imageInfo, imageCTM, bounds, svgBounds) => {
+	if (bounds.width <= 0 || bounds.height <= 0) return null;
+
+	const scale = Math.min(
+		Math.max(1, imageInfo.imageWidth / bounds.width, imageInfo.imageHeight / bounds.height),
+		MAX_STAMP_CANVAS_LENGTH / Math.max(bounds.width, bounds.height));
+
+	const canvas = document.createElement("canvas");
+	canvas.width = Math.max(1, Math.round(bounds.width * scale));
+	canvas.height = Math.max(1, Math.round(bounds.height * scale));
+
+	const ctx = canvas.getContext("2d");
+	//Move the origin of the SVG viewport to the top left corner of the stamp bounds, then apply the
+	//transform the image has inside that viewport
+	ctx.setTransform(scale, 0, 0, scale, -(bounds.left - svgBounds.left) * scale, -(bounds.top - svgBounds.top) * scale);
+	ctx.transform(imageCTM.a, imageCTM.b, imageCTM.c, imageCTM.d, imageCTM.e, imageCTM.f);
+
+	const image = await loadImage(imageInfo.imageData);
+	ctx.drawImage(image, 0, 0, imageInfo.imageWidth, imageInfo.imageHeight);
+
+	return canvas.toDataURL("image/png");
+};
+
+export const getImagePosition = async (context, imageInfo, imageMatrix) => {
 	
 	const { 
 		bravaHeight,
@@ -883,6 +927,15 @@ export const getImagePosition = (context, imageInfo, imageMatrix) => {
 	const bounds = imageNode.getBoundingClientRect(),
 		svgBounds = svgNode.getBoundingClientRect();
 	svgNode.ownerDocument.body.removeChild(svgNode);	
+
+	//Skewed images are pre-rendered into the stamp bounds, so the stamp itself only keeps the
+	//rotation of the page
+	let transformedImageData = null;
+	if (isSkewed(ctmMatx)) {
+		transformedImageData = await rasterizeTransformedImage(imageInfo, ctmMatx, bounds, svgBounds);
+		if (transformedImageData !== null) rotationAngle = 0;
+	}
+
 	const ratioWidth = context.pageInfo.width / svgBounds.width,	
 		ratioHeight = context.pageInfo.height / svgBounds.height;
 	let size = {minX: bounds.left, minY: bounds.top, maxX: bounds.right, maxY: bounds.bottom},
@@ -940,7 +993,7 @@ export const getImagePosition = (context, imageInfo, imageMatrix) => {
 	rotationAngle = context.pageRotationDegree - rotationAngle;
 	if (rotationAngle < 0) rotationAngle = 360 + rotationAngle;
 	
-	return {rotationAngle: rotationAngle, rect: size };
+	return {rotationAngle: rotationAngle, rect: size, imageData: transformedImageData };
 }
 
 export const recalculateTextBounds = (rectBounds, textRotationInDegrees, pageRotationDegree, textWidth, textHeight) => {
@@ -1021,6 +1074,14 @@ export const extractMatrix = (annotEl)=> {
 		return result;
 	} else return [1, 0 ,0, 1, 0, 0];
 	
+}
+
+//Uniform scale a matrix applies, ignoring rotation/skew and rounded so that placements
+//that only differ by floating point noise compare equal.
+export const getMatrixScale = (matrix) => {
+	if (!Array.isArray(matrix) || matrix.length < 4) return 1;
+	const scale = Math.sqrt(Math.abs(matrix[0] * matrix[3] - matrix[1] * matrix[2]));
+	return Math.round(scale * 1000) / 1000;
 }
 
 export const isPuppeteer = () => {
